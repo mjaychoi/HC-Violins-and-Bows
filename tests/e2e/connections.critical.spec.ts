@@ -24,8 +24,8 @@ import { freshSessionStorageState } from './fresh-session-state';
  * reported, never swallowed. Run-scoped org teardown remains the backstop.
  */
 
-// Fresh admin session per file: critical-path.spec.ts signs out globally,
-// which revokes the session global-setup saved for the admin.
+// This spec explicitly owns one fresh admin session instead of depending on
+// the persisted global-setup auth-state file.
 const adminState = freshSessionStorageState(getE2EAdminIdentity());
 
 type EmbeddedClient = {

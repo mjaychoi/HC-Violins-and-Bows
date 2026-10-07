@@ -167,7 +167,12 @@ class FakeStore implements RunScopedE2EStore {
 }
 
 function allIdentities(context: RunScopedE2EContext): E2EIdentity[] {
-  return [context.admin, context.member, context.secondaryAdmin];
+  return [
+    context.admin,
+    context.member,
+    context.logoutAdmin,
+    context.secondaryAdmin,
+  ];
 }
 
 /** Every value that names one of `context`'s resources in a store op. */
@@ -206,8 +211,14 @@ describe('run-scoped context', () => {
       orgId: a.secondaryOrgId,
       role: 'admin',
     });
+    expect(a.logoutAdmin).toEqual({
+      email: `hcve2e-${a.scopeKey}-logout-admin@example.test`,
+      password: envA.E2E_TEST_PASSWORD,
+      orgId: a.orgId,
+      role: 'admin',
+    });
     expect(new Set(allIdentities(a).map(identity => identity.email)).size).toBe(
-      3
+      4
     );
     for (const orgId of [a.orgId, a.secondaryOrgId]) {
       expect(orgId).not.toBe(DEFAULT_E2E_ORG_ID);
@@ -217,7 +228,7 @@ describe('run-scoped context', () => {
 });
 
 describe('run-scoped setup isolation', () => {
-  it('gives scope A and scope B disjoint orgs and users, two orgs and three users each', async () => {
+  it('gives scope A and scope B disjoint orgs and users, two orgs and four users each', async () => {
     const store = new FakeStore();
     const a = contextFor(envA);
     const b = contextFor(envB);
@@ -233,6 +244,7 @@ describe('run-scoped setup isolation', () => {
     expect(seededA.users.map(u => [u.label, u.role, u.created])).toEqual([
       ['admin', 'admin', true],
       ['member', 'member', true],
+      ['logout-admin', 'admin', true],
       ['secondary-admin', 'admin', true],
     ]);
 
@@ -253,11 +265,12 @@ describe('run-scoped setup isolation', () => {
     expect(store.orgs.size).toBe(4);
     expect(store.orgs.get(a.orgId)).toBe(a.orgName);
     expect(store.orgs.get(a.secondaryOrgId)).toBe(a.secondaryOrgName);
-    expect(store.users).toHaveLength(6);
+    expect(store.users).toHaveLength(8);
     for (const context of [a, b]) {
       for (const [identity, orgId] of [
         [context.admin, context.orgId],
         [context.member, context.orgId],
+        [context.logoutAdmin, context.orgId],
         [context.secondaryAdmin, context.secondaryOrgId],
       ] as const) {
         expect(store.userByEmail(identity.email)?.app_metadata).toEqual({
@@ -277,9 +290,14 @@ describe('run-scoped setup isolation', () => {
     const again = await seedRunScopedFixtures(store, a, envA);
 
     expect(again.orgs.map(o => o.created)).toEqual([false, false]);
-    expect(again.users.map(u => u.created)).toEqual([false, false, false]);
+    expect(again.users.map(u => u.created)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
     expect(store.orgs.size).toBe(2);
-    expect(store.users).toHaveLength(3);
+    expect(store.users).toHaveLength(4);
   });
 
   it('refuses to adopt a user with the derived email but foreign metadata, before any write', async () => {
@@ -316,6 +334,26 @@ describe('run-scoped setup isolation', () => {
     );
     expect(store.mutations()).toEqual([]);
     expect(store.orgs.size).toBe(0);
+  });
+
+  it('refuses a logout admin with foreign ownership metadata before any write', async () => {
+    const store = new FakeStore();
+    const a = contextFor(envA);
+    store.users.push({
+      id: 'foreign-logout-admin',
+      email: a.logoutAdmin.email,
+      app_metadata: {
+        org_id: a.orgId,
+        role: 'admin',
+        e2e_managed: true,
+        e2e_run_scope: contextFor(envB).scopeKey,
+      },
+    });
+
+    await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
+      /logout-admin user belongs to a different run scope/
+    );
+    expect(store.mutations()).toEqual([]);
   });
 
   it('refuses a secondary org id already used by a differently named org, before any write', async () => {
@@ -362,12 +400,13 @@ describe('run-scoped cleanup', () => {
     return { store, a, b };
   }
 
-  it('removes both of A’s orgs and all three users, and touches nothing of B', async () => {
+  it('removes both of A’s orgs and all four users, and touches nothing of B', async () => {
     const { store, a, b } = await seededPair();
     const aUser = (email: string) => store.userByEmail(email)?.id;
     const aIds = {
       admin: aUser(a.admin.email),
       member: aUser(a.member.email),
+      logoutAdmin: aUser(a.logoutAdmin.email),
       secondary: aUser(a.secondaryAdmin.email),
     };
     const bMarkers = resourceMarkers(store, b);
@@ -378,6 +417,7 @@ describe('run-scoped cleanup', () => {
     expect(summary.authUsersDeleted).toEqual([
       'admin',
       'member',
+      'logout-admin',
       'secondary-admin',
     ]);
     for (const slot of ['primary', 'secondary'] as const) {
@@ -394,6 +434,7 @@ describe('run-scoped cleanup', () => {
     expect(summary.authUsersResidual).toEqual({
       admin: 0,
       member: 0,
+      'logout-admin': 0,
       'secondary-admin': 0,
     });
     expect(summary.residualTotal).toBe(0);
@@ -408,6 +449,7 @@ describe('run-scoped cleanup', () => {
       `deleteRows:organizations.id=${a.secondaryOrgId}`,
       `deleteUser:${aIds.admin}`,
       `deleteUser:${aIds.member}`,
+      `deleteUser:${aIds.logoutAdmin}`,
       `deleteUser:${aIds.secondary}`,
     ]);
 
@@ -493,10 +535,14 @@ describe('run-scoped cleanup', () => {
     await expect(seedRunScopedFixtures(store, a, envA)).rejects.toThrow(
       /simulated createUser failure/
     );
-    expect(store.users).toHaveLength(2);
+    expect(store.users).toHaveLength(3);
 
     const summary = await cleanupRunScopedFixtures(store, a, envA);
-    expect(summary.authUsersDeleted).toEqual(['admin', 'member']);
+    expect(summary.authUsersDeleted).toEqual([
+      'admin',
+      'member',
+      'logout-admin',
+    ]);
     expect(summary.authUsersResidual['secondary-admin']).toBe(0);
     expect(summary.residualTotal).toBe(0);
     expect(store.orgs.size).toBe(0);
@@ -539,13 +585,13 @@ describe('run-scoped cleanup', () => {
     const { store, a } = await seededPair();
     store.deleteUser = async (id: string) => {
       store.ops.push(`deleteUser:${id}`);
-      if (id !== store.userByEmail(a.secondaryAdmin.email)?.id) {
+      if (id !== store.userByEmail(a.logoutAdmin.email)?.id) {
         store.users = store.users.filter(u => u.id !== id);
       }
     };
 
     await expect(cleanupRunScopedFixtures(store, a, envA)).rejects.toThrow(
-      /left residual resources.*"secondary-admin":1/
+      /left residual resources.*"logout-admin":1/
     );
   });
 });
@@ -657,6 +703,17 @@ describe('run-scoped cleanup safety gates', () => {
     await expectRefusal(
       {
         ...context,
+        logoutAdmin: {
+          ...context.logoutAdmin,
+          email: b.logoutAdmin.email,
+        },
+      },
+      envA,
+      /logout-admin email does not carry the run-scope marker/
+    );
+    await expectRefusal(
+      {
+        ...context,
         secondaryAdmin: {
           ...context.secondaryAdmin,
           email: b.secondaryAdmin.email,
@@ -667,12 +724,44 @@ describe('run-scoped cleanup safety gates', () => {
     );
   });
 
+  it('refuses identities that collapse onto the same auth user', async () => {
+    const context = contextFor(envA);
+    await expectRefusal(
+      { ...context, logoutAdmin: { ...context.admin } },
+      envA,
+      /run-scoped identities do not resolve to distinct users/
+    );
+  });
+
+  it('refuses a logout admin homed in the wrong org or with the wrong role', async () => {
+    const context = contextFor(envA);
+    await expectRefusal(
+      {
+        ...context,
+        logoutAdmin: {
+          ...context.logoutAdmin,
+          orgId: context.secondaryOrgId,
+        },
+      },
+      envA,
+      /logout-admin org id is not the run-scoped primary org id/
+    );
+    await expectRefusal(
+      {
+        ...context,
+        logoutAdmin: { ...context.logoutAdmin, role: 'member' },
+      },
+      envA,
+      /logout-admin role is not admin/
+    );
+  });
+
   it('refuses a secondary admin that collapses onto the primary admin', async () => {
     const context = contextFor(envA);
     await expectRefusal(
       { ...context, secondaryAdmin: { ...context.admin } },
       envA,
-      /secondary-admin email does not carry the run-scope marker/
+      /run-scoped identities do not resolve to distinct users/
     );
   });
 
@@ -748,6 +837,45 @@ describe('run-scoped cleanup safety gates', () => {
       if (admin) admin.app_metadata = { org_id: a.orgId, role: 'admin' };
     });
   });
+
+  it.each([
+    [
+      'is not e2e_managed',
+      /logout-admin user is not marked e2e_managed/,
+      (meta: Record<string, unknown>) => ({ ...meta, e2e_managed: false }),
+    ],
+    [
+      'carries another run scope',
+      /logout-admin user belongs to a different run scope/,
+      (meta: Record<string, unknown>) => ({
+        ...meta,
+        e2e_run_scope: contextFor(envB).scopeKey,
+      }),
+    ],
+    [
+      'is homed in the secondary org',
+      /logout-admin user belongs to a different organization/,
+      (meta: Record<string, unknown>) => ({
+        ...meta,
+        org_id: contextFor(envA).secondaryOrgId,
+      }),
+    ],
+    [
+      'has a different role',
+      /logout-admin user has a different role/,
+      (meta: Record<string, unknown>) => ({ ...meta, role: 'member' }),
+    ],
+  ])(
+    'refuses (before any delete) when the logout admin %s',
+    async (_label, pattern, mutate) => {
+      const a = contextFor(envA);
+      await expectRefusal(a, envA, pattern, store => {
+        const user = store.userByEmail(a.logoutAdmin.email);
+        if (!user) throw new Error('expected a seeded logout admin');
+        user.app_metadata = mutate(user.app_metadata);
+      });
+    }
+  );
 
   it.each([
     [

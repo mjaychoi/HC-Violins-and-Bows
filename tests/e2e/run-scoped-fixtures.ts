@@ -10,6 +10,7 @@ import {
   deriveE2EScopedEmail,
   e2eScopedEmailMarker,
   getE2EAdminIdentity,
+  getE2ELogoutAdminIdentity,
   getE2EMemberIdentity,
   getE2ERunScope,
   getE2ESecondaryAdminIdentity,
@@ -56,9 +57,9 @@ export const ORG_SCOPED_TABLES_WITHOUT_ORG_FK = [
 
 /**
  * One E2E run owns two organizations, both derived from the same run scope:
- * the primary org (admin + member) and a secondary org (secondary admin) that
- * cross-tenant specs use as the "other tenant". Neither is ever shared with
- * another run.
+ * the primary org (admin + member + logout admin) and a secondary org
+ * (secondary admin) that cross-tenant specs use as the "other tenant".
+ * Neither is ever shared with another run.
  */
 export type RunScopedE2EContext = {
   scope: string;
@@ -69,6 +70,7 @@ export type RunScopedE2EContext = {
   secondaryOrgName: string;
   admin: E2EIdentity;
   member: E2EIdentity;
+  logoutAdmin: E2EIdentity;
   secondaryAdmin: E2EIdentity;
 };
 
@@ -149,6 +151,7 @@ export function resolveRunScopedE2EContext(
     secondaryOrgName: deriveE2EOrgName(scopeKey, E2E_SECONDARY_ORG_SLOT),
     admin: getE2EAdminIdentity(env),
     member: getE2EMemberIdentity(env),
+    logoutAdmin: getE2ELogoutAdminIdentity(env),
     secondaryAdmin: getE2ESecondaryAdminIdentity(env),
   };
 }
@@ -176,6 +179,12 @@ export function runScopedIdentities(
       slot: 'primary',
       role: 'member',
       identity: context.member,
+    },
+    {
+      label: 'logout-admin',
+      slot: 'primary',
+      role: 'admin',
+      identity: context.logoutAdmin,
     },
     {
       label: 'secondary-admin',
@@ -257,6 +266,10 @@ export function assertRunScopedFixtureAccessAllowed(
 
   const marker = e2eScopedEmailMarker(context.scopeKey);
   const managed = runScopedIdentities(context);
+  const emails = new Set(managed.map(m => m.identity.email.toLowerCase()));
+  if (emails.size !== managed.length) {
+    refuse('run-scoped identities do not resolve to distinct users.');
+  }
   for (const { label, slot, role, identity } of managed) {
     if (
       identity.email !== deriveE2EScopedEmail(context.scopeKey, label) ||
@@ -270,10 +283,6 @@ export function assertRunScopedFixtureAccessAllowed(
     if (identity.role !== role) {
       refuse(`${label} role is not ${role}.`);
     }
-  }
-  const emails = new Set(managed.map(m => m.identity.email.toLowerCase()));
-  if (emails.size !== managed.length) {
-    refuse('run-scoped identities do not resolve to distinct users.');
   }
 
   if (!env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
@@ -327,7 +336,7 @@ async function findOwnedOrganization(
 }
 
 /**
- * Looks up both orgs and all three users, verifying ownership of everything
+ * Looks up both orgs and all four users, verifying ownership of everything
  * that already exists. Read-only: callers write only after this returns.
  */
 async function findOwnedResources(
@@ -352,7 +361,7 @@ async function findOwnedResources(
 
 /**
  * Creates (or, for a rerun of the same scope, re-verifies) this run's two
- * orgs and three users. Never reads or writes another scope's resources:
+ * orgs and four users. Never reads or writes another scope's resources:
  * lookups are by the exact derived org ids and emails, and every existing
  * org/user is verified before the first write.
  */
@@ -420,7 +429,7 @@ function sum(values: Iterable<number>): number {
 
 /**
  * Deletes exactly this run's two orgs (children cascade), their FK-less
- * api_create_idempotency rows, and the three auth users, then proves nothing
+ * api_create_idempotency rows, and the four auth users, then proves nothing
  * remains. Every ownership check runs before the first delete. Safe to call
  * repeatedly, and after a partial setup: whatever is missing is skipped.
  */

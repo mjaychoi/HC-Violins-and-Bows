@@ -41,9 +41,8 @@ import { waitForPageLoad } from './test-helpers';
  * (cleanupRunScopedFixtures), which cascades it with the org.
  */
 
-// Admin auth must come from a brand-new session: critical-path.spec.ts sorts
-// before this file and its UI sign-out globally revokes the admin session
-// saved by global-setup (see fresh-session-state.ts).
+// This spec explicitly owns one fresh admin session instead of depending on
+// the persisted global-setup auth-state file.
 const adminState = freshSessionStorageState(getE2EAdminIdentity());
 
 type SaleRow = {

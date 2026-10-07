@@ -77,14 +77,11 @@ async function signInStorageState(
  *       provide(await adminState(baseURL)),
  *   });
  *
- * Why: critical-path.spec.ts ends its admin block with a UI sign-out, and
- * the app's signOut() is global, so it revokes every admin session,
- * including the one global-setup saved to ADMIN_AUTH_STATE_PATH. CI runs
- * spec files alphabetically on one worker, so an admin spec sorting after
- * critical-path.spec.ts would inherit a revoked session. The memo is per
- * call site (not module-global) so a session created by a file that ran
- * before the sign-out is never reused by a file that runs after it, and one
- * sign-in per file stays well under the Supabase auth rate limit.
+ * The memo is per call site (not module-global), so each caller explicitly
+ * owns the fresh session state it requests while repeated fixture setup for
+ * that caller reuses one sign-in. This is useful when a spec should not
+ * depend on a persisted shared auth-state file and keeps sign-ins well under
+ * the Supabase auth rate limit.
  */
 export function freshSessionStorageState(
   identity: E2EIdentity
