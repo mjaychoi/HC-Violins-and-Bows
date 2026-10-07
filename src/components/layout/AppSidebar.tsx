@@ -188,6 +188,7 @@ export default function AppSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
                 className={`py-3 cursor-pointer transition-all duration-300 ${
                   expanded ? 'px-6 justify-start' : 'px-4 justify-center'
                 } flex items-center ${
