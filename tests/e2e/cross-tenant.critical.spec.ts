@@ -185,16 +185,22 @@ async function openPrimaryDashboard(page: Page): Promise<void> {
 
 type SecondaryClient = { id: string; first_name: string; updated_at: string };
 
-async function createSecondaryClient(
-  secondary: APIRequestContext,
-  suffix: string
+type Tenant = 'primary' | 'secondary';
+
+const TENANT_LETTER: Record<Tenant, string> = { primary: 'A', secondary: 'B' };
+
+async function createTenantClient(
+  request: APIRequestContext,
+  suffix: string,
+  tenant: Tenant = 'secondary'
 ): Promise<SecondaryClient> {
+  const letter = TENANT_LETTER[tenant];
   const created = await expectStatus(
-    await secondary.post('/api/clients', {
+    await request.post('/api/clients', {
       data: {
-        first_name: `Tenant B ${suffix}`,
+        first_name: `Tenant ${letter} ${suffix}`,
         last_name: 'Client',
-        email: `tenant-b-${suffix}@example.com`,
+        email: `tenant-${letter.toLowerCase()}-${suffix}@example.com`,
         contact_number: null,
         tags: ['E2E-CROSS-TENANT'],
         interest: 'Cross-tenant',
@@ -202,20 +208,21 @@ async function createSecondaryClient(
       },
     }),
     201,
-    'secondary admin creates a client'
+    `${tenant} admin creates a client`
   );
   return created.json.data as SecondaryClient;
 }
 
-async function createSecondaryInstrument(
-  secondary: APIRequestContext,
-  suffix: string
+async function createTenantInstrument(
+  request: APIRequestContext,
+  suffix: string,
+  tenant: Tenant = 'secondary'
 ): Promise<string> {
   const created = await expectStatus(
-    await secondary.post('/api/instruments', {
+    await request.post('/api/instruments', {
       data: {
         type: 'Violin',
-        maker: `Tenant B ${suffix}`,
+        maker: `Tenant ${TENANT_LETTER[tenant]} ${suffix}`,
         year: 2026,
         price: 1500,
         status: 'Available',
@@ -224,7 +231,7 @@ async function createSecondaryInstrument(
       },
     }),
     201,
-    'secondary admin creates an instrument'
+    `${tenant} admin creates an instrument`
   );
   return created.json.data.id as string;
 }
@@ -258,15 +265,28 @@ async function createSecondaryConnection(
   return created.json.data as SecondaryConnection;
 }
 
-async function deleteAsSecondary(
-  secondary: APIRequestContext,
+async function deleteAsOwner(
+  owner: APIRequestContext,
   path: string
 ): Promise<void> {
-  await expectStatus(
-    await secondary.delete(path),
+  await expectStatus(await owner.delete(path), 200, `cleanup DELETE ${path}`);
+}
+
+async function readSecondaryConnection(
+  secondary: APIRequestContext,
+  clientId: string,
+  connectionId: string
+): Promise<SecondaryConnection> {
+  const list = await expectStatus(
+    await secondary.get(`/api/connections?client_id=${clientId}`),
     200,
-    `secondary cleanup DELETE ${path}`
+    'secondary admin re-reads its connection'
   );
+  const row = (list.json.data as SecondaryConnection[]).find(
+    candidate => candidate.id === connectionId
+  );
+  expect(row, 'secondary connection missing from its own list').toBeTruthy();
+  return row as SecondaryConnection;
 }
 
 test.describe('Cross-tenant isolation', () => {
@@ -292,9 +312,9 @@ test.describe('Cross-tenant isolation', () => {
       try {
         await withCleanup(async register => {
           const suffix = uniqueSuffix();
-          const client = await createSecondaryClient(secondary, suffix);
+          const client = await createTenantClient(secondary, suffix);
           register('client', () =>
-            deleteAsSecondary(secondary, `/api/clients?id=${client.id}`)
+            deleteAsOwner(secondary, `/api/clients?id=${client.id}`)
           );
 
           const readAsSecondary = async () =>
@@ -397,12 +417,9 @@ test.describe('Cross-tenant isolation', () => {
       try {
         await withCleanup(async register => {
           const suffix = uniqueSuffix();
-          const instrumentId = await createSecondaryInstrument(
-            secondary,
-            suffix
-          );
+          const instrumentId = await createTenantInstrument(secondary, suffix);
           register('instrument', () =>
-            deleteAsSecondary(secondary, `/api/instruments?id=${instrumentId}`)
+            deleteAsOwner(secondary, `/api/instruments?id=${instrumentId}`)
           );
 
           const readAsSecondary = async () =>
@@ -577,16 +594,13 @@ test.describe('Cross-tenant isolation', () => {
         await withCleanup(async register => {
           const suffix = uniqueSuffix();
           const today = todayIsoDate();
-          const client = await createSecondaryClient(secondary, suffix);
+          const client = await createTenantClient(secondary, suffix);
           register('client', () =>
-            deleteAsSecondary(secondary, `/api/clients?id=${client.id}`)
+            deleteAsOwner(secondary, `/api/clients?id=${client.id}`)
           );
-          const instrumentId = await createSecondaryInstrument(
-            secondary,
-            suffix
-          );
+          const instrumentId = await createTenantInstrument(secondary, suffix);
           register('instrument', () =>
-            deleteAsSecondary(secondary, `/api/instruments?id=${instrumentId}`)
+            deleteAsOwner(secondary, `/api/instruments?id=${instrumentId}`)
           );
 
           const invoicePayload = (
@@ -626,7 +640,7 @@ test.describe('Cross-tenant isolation', () => {
           // Draft invoices are hard-deletable; registered last so it runs
           // first, before the instrument and client it references.
           register('invoice', () =>
-            deleteAsSecondary(secondary, `/api/invoices/${invoiceId}`)
+            deleteAsOwner(secondary, `/api/invoices/${invoiceId}`)
           );
 
           const readAsSecondary = async () =>
@@ -773,16 +787,13 @@ test.describe('Cross-tenant isolation', () => {
       try {
         await withCleanup(async register => {
           const suffix = uniqueSuffix();
-          const client = await createSecondaryClient(secondary, suffix);
+          const client = await createTenantClient(secondary, suffix);
           register('client', () =>
-            deleteAsSecondary(secondary, `/api/clients?id=${client.id}`)
+            deleteAsOwner(secondary, `/api/clients?id=${client.id}`)
           );
-          const instrumentId = await createSecondaryInstrument(
-            secondary,
-            suffix
-          );
+          const instrumentId = await createTenantInstrument(secondary, suffix);
           register('instrument', () =>
-            deleteAsSecondary(secondary, `/api/instruments?id=${instrumentId}`)
+            deleteAsOwner(secondary, `/api/instruments?id=${instrumentId}`)
           );
           const connection = await createSecondaryConnection(secondary, {
             clientId: client.id,
@@ -792,7 +803,7 @@ test.describe('Cross-tenant isolation', () => {
           // Registered last so cleanup deletes the connection before the
           // instrument and client it references.
           register('connection', () =>
-            deleteAsSecondary(secondary, `/api/connections?id=${connection.id}`)
+            deleteAsOwner(secondary, `/api/connections?id=${connection.id}`)
           );
 
           const listPath = `/api/connections?client_id=${client.id}&orderBy=display_order&ascending=true`;
@@ -857,6 +868,210 @@ test.describe('Cross-tenant isolation', () => {
           expect(after.relationship_type).toBe(original.relationship_type);
           expect(after.client_id).toBe(original.client_id);
           expect(after.instrument_id).toBe(original.instrument_id);
+        });
+      } finally {
+        await secondaryContext.close();
+      }
+    }
+  );
+
+  test(
+    'primary admin cannot list, update, delete, or reference-inject a secondary-org connection',
+    {
+      tag: '@critical',
+    },
+    async ({ page, browser, baseURL }) => {
+      await openPrimaryDashboard(page);
+      const secondaryContext = await browser.newContext({
+        baseURL,
+        storageState: await secondaryAdminState(baseURL),
+      });
+      const secondary = secondaryContext.request;
+      const primary = page.request;
+
+      try {
+        await withCleanup(async register => {
+          const suffix = uniqueSuffix();
+          const client = await createTenantClient(secondary, suffix);
+          register('secondary client', () =>
+            deleteAsOwner(secondary, `/api/clients?id=${client.id}`)
+          );
+          const instrumentId = await createTenantInstrument(secondary, suffix);
+          register('secondary instrument', () =>
+            deleteAsOwner(secondary, `/api/instruments?id=${instrumentId}`)
+          );
+          const connection = await createSecondaryConnection(secondary, {
+            clientId: client.id,
+            instrumentId,
+            notes: suffix,
+          });
+          register('secondary connection', () =>
+            deleteAsOwner(secondary, `/api/connections?id=${connection.id}`)
+          );
+
+          // Valid primary-org references for the injection probes. They use
+          // their own suffix so the secondary secret never appears in them.
+          const primarySuffix = uniqueSuffix();
+          const primaryClient = await createTenantClient(
+            primary,
+            primarySuffix,
+            'primary'
+          );
+          register('primary client', () =>
+            deleteAsOwner(primary, `/api/clients?id=${primaryClient.id}`)
+          );
+          const primaryInstrumentId = await createTenantInstrument(
+            primary,
+            primarySuffix,
+            'primary'
+          );
+          register('primary instrument', () =>
+            deleteAsOwner(primary, `/api/instruments?id=${primaryInstrumentId}`)
+          );
+
+          const original = await readSecondaryConnection(
+            secondary,
+            client.id,
+            connection.id
+          );
+          expect(original.notes).toBe(suffix);
+          const expectSecondaryUnchanged = async (label: string) => {
+            const after = await readSecondaryConnection(
+              secondary,
+              client.id,
+              connection.id
+            );
+            expect(after, label).toEqual(original);
+          };
+          const missingId = randomUUID();
+
+          // List probes: a secondary-org filter value returns nothing to the
+          // primary admin, while the same query finds the row for its owner.
+          for (const path of [
+            `/api/connections?client_id=${client.id}`,
+            `/api/connections?instrument_id=${instrumentId}`,
+          ]) {
+            const list = await expectStatus(
+              await primary.get(path),
+              200,
+              `primary admin lists ${path}`
+            );
+            expect(list.json.data, path).toEqual([]);
+            expect(list.json.count, path).toBe(0);
+            expect(list.text, path).not.toContain(suffix);
+            await expectListedFor(
+              secondary,
+              path,
+              connection.id,
+              `secondary admin lists ${path}`
+            );
+          }
+
+          // update_connection_atomic / delete_connection_atomic select the
+          // row with org_id = org_id() and raise 'Connection not found' for a
+          // foreign or missing id; the route maps that to 409.
+          await expectTenantSafeDenial({
+            label: 'PATCH /api/connections',
+            status: 409,
+            error: 'Connection not found',
+            secret: suffix,
+            foreign: () =>
+              primary.patch('/api/connections', {
+                data: {
+                  id: connection.id,
+                  relationship_type: 'Booked',
+                  notes: `Hijacked ${suffix}`,
+                },
+              }),
+            nonexistent: () =>
+              primary.patch('/api/connections', {
+                data: {
+                  id: missingId,
+                  relationship_type: 'Booked',
+                  notes: 'Nobody',
+                },
+              }),
+          });
+          await expectSecondaryUnchanged('after denied PATCH');
+
+          await expectTenantSafeDenial({
+            label: 'DELETE /api/connections?id',
+            status: 409,
+            error: 'Connection not found',
+            secret: suffix,
+            foreign: () =>
+              primary.delete(`/api/connections?id=${connection.id}`),
+            nonexistent: () =>
+              primary.delete(`/api/connections?id=${missingId}`),
+          });
+          await expectSecondaryUnchanged('after denied DELETE');
+
+          // create_connection_atomic checks both references against
+          // org_id() before inserting; the route maps 'not found' to 409.
+          const postConnection = (
+            key: string,
+            clientId: string,
+            connectionInstrumentId: string
+          ) =>
+            primary.post('/api/connections', {
+              headers: {
+                'Idempotency-Key': `e2e-xt-conn-${key}-${primarySuffix}`,
+              },
+              data: {
+                client_id: clientId,
+                instrument_id: connectionInstrumentId,
+                relationship_type: 'Interested',
+                notes: `Injected ${primarySuffix}`,
+              },
+            });
+          await expectTenantSafeDenial({
+            label: 'POST /api/connections with a secondary-org client',
+            status: 409,
+            error: 'Client not found in organization',
+            secret: suffix,
+            foreign: () =>
+              postConnection('client-a', client.id, primaryInstrumentId),
+            nonexistent: () =>
+              postConnection('client-b', randomUUID(), primaryInstrumentId),
+          });
+          await expectTenantSafeDenial({
+            label: 'POST /api/connections with a secondary-org instrument',
+            status: 409,
+            error: 'Instrument not found in organization',
+            secret: suffix,
+            foreign: () =>
+              postConnection('instrument-a', primaryClient.id, instrumentId),
+            nonexistent: () =>
+              postConnection('instrument-b', primaryClient.id, randomUUID()),
+          });
+
+          // No relation was created on either side of the boundary.
+          for (const path of [
+            `/api/connections?client_id=${primaryClient.id}`,
+            `/api/connections?instrument_id=${primaryInstrumentId}`,
+          ]) {
+            const list = await expectStatus(
+              await primary.get(path),
+              200,
+              `primary admin lists ${path} after injection attempts`
+            );
+            expect(list.json.data, path).toEqual([]);
+          }
+          for (const path of [
+            `/api/connections?client_id=${client.id}`,
+            `/api/connections?instrument_id=${instrumentId}`,
+          ]) {
+            const list = await expectStatus(
+              await secondary.get(path),
+              200,
+              `secondary admin lists ${path} after injection attempts`
+            );
+            expect(
+              (list.json.data as SecondaryConnection[]).map(row => row.id),
+              path
+            ).toEqual([connection.id]);
+          }
+          await expectSecondaryUnchanged('after injection attempts');
         });
       } finally {
         await secondaryContext.close();
