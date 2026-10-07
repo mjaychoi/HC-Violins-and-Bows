@@ -35,20 +35,63 @@ type UserScopedSupabase = {
   };
 };
 
+export const INVOICE_IMAGE_HYDRATION_REASONS = {
+  missingObject: 'missing-object',
+  unresolvableReference: 'unresolvable-reference',
+  crossTenant: 'cross-tenant',
+  storageError: 'storage-error',
+} as const;
+
+export type InvoiceImageHydrationReason =
+  (typeof INVOICE_IMAGE_HYDRATION_REASONS)[keyof typeof INVOICE_IMAGE_HYDRATION_REASONS];
+
 function createInvoiceImageReadError(
   code: ErrorCodes,
   message: string,
   status: number,
   storagePath: string,
+  reason: InvoiceImageHydrationReason,
   details?: string
 ) {
   return {
     ...errorHandler.createApiError(code, message, status, undefined, details),
     context: {
       invoiceImageHydration: true,
+      invoiceImageHydrationReason: reason,
       storagePath,
     },
   };
+}
+
+export function getInvoiceImageHydrationReason(
+  err: unknown
+): InvoiceImageHydrationReason | null {
+  if (!err || typeof err !== 'object') return null;
+  const reason = (
+    err as { context?: { invoiceImageHydrationReason?: unknown } }
+  ).context?.invoiceImageHydrationReason;
+  if (
+    reason === INVOICE_IMAGE_HYDRATION_REASONS.missingObject ||
+    reason === INVOICE_IMAGE_HYDRATION_REASONS.unresolvableReference ||
+    reason === INVOICE_IMAGE_HYDRATION_REASONS.crossTenant ||
+    reason === INVOICE_IMAGE_HYDRATION_REASONS.storageError
+  ) {
+    return reason;
+  }
+  return null;
+}
+
+export function isMissingOptionalInvoiceImageError(err: unknown): boolean {
+  return (
+    getInvoiceImageHydrationReason(err) ===
+    INVOICE_IMAGE_HYDRATION_REASONS.missingObject
+  );
+}
+
+function resolveInvoiceImageStoragePath(value: string): string | null {
+  return isAbsoluteUrl(value)
+    ? extractInvoiceStoragePathFromUrl(value)
+    : normalizeStoragePathCandidate(value);
 }
 
 function isAbsoluteUrl(value: string): boolean {
@@ -245,12 +288,9 @@ export async function createInvoiceImageSignedUrl(
   storagePath: string,
   expectedOrgId?: string | null
 ): Promise<string> {
-  const normalizedPath = normalizeInvoiceImageReference(
-    storagePath,
-    expectedOrgId
-  );
+  const resolvedPath = resolveInvoiceImageStoragePath(storagePath);
 
-  if (!normalizedPath) {
+  if (!resolvedPath) {
     logWarn('invoice-image.reference.invalid', 'InvoicesAPI.imageUrls', {
       storagePath,
       expectedOrgId,
@@ -261,9 +301,26 @@ export async function createInvoiceImageSignedUrl(
       'Invoice image not found',
       404,
       storagePath,
+      INVOICE_IMAGE_HYDRATION_REASONS.unresolvableReference,
       'Storage path does not match invoice image policy.'
     );
   }
+
+  if (!matchesExpectedOrgPrefix(resolvedPath, expectedOrgId)) {
+    logWarn('invoice-image.reference.cross_tenant', 'InvoicesAPI.imageUrls', {
+      expectedOrgId,
+    });
+
+    throw createInvoiceImageReadError(
+      ErrorCodes.FORBIDDEN,
+      'Invoice image is not available',
+      403,
+      resolvedPath,
+      INVOICE_IMAGE_HYDRATION_REASONS.crossTenant
+    );
+  }
+
+  const normalizedPath = resolvedPath;
 
   const storage = userSupabase.storage.from(INVOICE_IMAGE_BUCKET);
 
@@ -283,6 +340,7 @@ export async function createInvoiceImageSignedUrl(
       'Failed to verify invoice image availability',
       500,
       normalizedPath,
+      INVOICE_IMAGE_HYDRATION_REASONS.storageError,
       existsError.message || 'Storage existence check failed.'
     );
   }
@@ -297,6 +355,7 @@ export async function createInvoiceImageSignedUrl(
       'Invoice image not found',
       404,
       normalizedPath,
+      INVOICE_IMAGE_HYDRATION_REASONS.missingObject,
       'Storage object is missing.'
     );
   }
@@ -319,6 +378,7 @@ export async function createInvoiceImageSignedUrl(
       'Failed to generate invoice image access URL',
       500,
       normalizedPath,
+      INVOICE_IMAGE_HYDRATION_REASONS.storageError,
       error?.message || 'Missing signed URL.'
     );
   }
@@ -349,11 +409,30 @@ export async function attachSignedUrlsToInvoiceItems<
       );
 
       if (!storagePath) {
+        const resolvedPath = resolveInvoiceImageStoragePath(item.image_url);
+        if (
+          resolvedPath &&
+          expectedOrgId &&
+          !matchesExpectedOrgPrefix(resolvedPath, expectedOrgId)
+        ) {
+          logWarn(
+            'invoice-image.reference.cross_tenant',
+            'InvoicesAPI.imageUrls',
+            { expectedOrgId }
+          );
+          throw createInvoiceImageReadError(
+            ErrorCodes.FORBIDDEN,
+            'Invoice image is not available',
+            403,
+            resolvedPath,
+            INVOICE_IMAGE_HYDRATION_REASONS.crossTenant
+          );
+        }
+
         logWarn(
           'invoice-image.reference.unresolvable',
           'InvoicesAPI.imageUrls',
           {
-            imageUrl: item.image_url,
             expectedOrgId,
           }
         );
@@ -363,20 +442,31 @@ export async function attachSignedUrlsToInvoiceItems<
           'Invoice image not found',
           404,
           item.image_url,
+          INVOICE_IMAGE_HYDRATION_REASONS.unresolvableReference,
           'Image reference could not be resolved to storage.'
         );
       }
 
-      const signedUrl = await createInvoiceImageSignedUrl(
-        userSupabase,
-        storagePath,
-        expectedOrgId
-      );
+      try {
+        const signedUrl = await createInvoiceImageSignedUrl(
+          userSupabase,
+          storagePath,
+          expectedOrgId
+        );
 
-      return {
-        ...item,
-        image_signed_url: signedUrl,
-      };
+        return {
+          ...item,
+          image_signed_url: signedUrl,
+        };
+      } catch (error) {
+        if (isMissingOptionalInvoiceImageError(error)) {
+          return {
+            ...item,
+            image_signed_url: null,
+          };
+        }
+        throw error;
+      }
     })
   );
 }

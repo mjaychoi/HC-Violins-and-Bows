@@ -101,7 +101,7 @@ describe('ErrorToast', () => {
   it('should call onClose when close button is clicked', () => {
     render(<ErrorToast {...defaultProps} />);
 
-    const closeButton = screen.getByRole('button', { name: '닫기' });
+    const closeButton = screen.getByRole('button', { name: 'Close' });
     fireEvent.click(closeButton);
 
     expect(defaultProps.onClose).toHaveBeenCalled();
@@ -148,7 +148,7 @@ describe('ErrorToast', () => {
   it('should show recovery suggestions when enabled', () => {
     render(<ErrorToast {...defaultProps} showRecoverySuggestions={true} />);
 
-    expect(screen.getByText(/해결 방법:/)).toBeInTheDocument();
+    expect(screen.getByText(/Try this:/)).toBeInTheDocument();
     expect(screen.getByText('Check your connection')).toBeInTheDocument();
     expect(screen.getByText('Try again later')).toBeInTheDocument();
   });
@@ -191,7 +191,7 @@ describe('ErrorToast', () => {
   it('should not render recovery suggestions when disabled', () => {
     render(<ErrorToast {...defaultProps} showRecoverySuggestions={false} />);
 
-    expect(screen.queryByText(/해결 방법:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Try this:/)).not.toBeInTheDocument();
     expect(screen.queryByText('Check your connection')).not.toBeInTheDocument();
     expect(screen.queryByText('Try again later')).not.toBeInTheDocument();
   });

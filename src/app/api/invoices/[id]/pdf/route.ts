@@ -504,7 +504,7 @@ async function generateInvoicePdfResponse(
       qty: item.qty,
       rate: item.rate,
       amount: item.amount,
-      image_url: item.image_signed_url || item.image_url,
+      image_url: item.image_signed_url || null,
       item_number: item.instrument?.serial_number || null,
     }));
 
