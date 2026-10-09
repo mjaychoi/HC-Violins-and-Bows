@@ -1,0 +1,210 @@
+# Task manifest for the parallel agent runner.
+#
+# One entry per independently-ownable coding task. `allowed_files` /
+# `allowed_file_prefixes` declare what a task may touch; `forbidden_files`
+# freezes files it must not, and wins over the allow lists. The runner fails a
+# task closed when its worktree changed anything outside that scope.
+#
+# Run `parallel_runner.py --dry-run` after editing to validate this file.
+
+version: 1
+
+defaults:
+  base_ref: origin/main
+  worktree_root: /tmp/hc-parallel-agents
+  max_parallel: 7
+  timeout_minutes: 45
+  repository: mjaychoi/HC-Violins-and-Bows
+
+  # Baseline local validation. A task that declares its own `validate` replaces
+  # this; the task manifest is always the source of truth.
+  validate:
+    - npm run type-check
+    - npm run lint
+
+  # Frozen for every task in every batch, and `forbidden_files` wins over any
+  # task's allow list. CI concurrency coordination and dependency changes are
+  # deliberately out of scope for parallel batches, and agents must never edit
+  # the runner that supervises them.
+  #
+  # Patterns are fnmatch, where `*` crosses `/`, so one entry covers a tree.
+  forbidden_files:
+    - .github/workflows/ci.yml
+    - .github/workflows/production-db-deploy.yml
+    - .github/workflows/production-db-reconcile.yml
+    - package.json
+    - package-lock.json
+    - playwright.config.ts
+    - next.config.ts
+    - tools/parallel-agents/*
+    - supabase/migrations/*
+    - scripts/production/*
+
+tasks:
+  - id: B
+    title: Connections CRUD critical coverage
+    branch: test/e2e-connections-critical
+    prompt: prompts/B-connections.md
+    depends_on: []
+    allowed_files:
+      - tests/e2e/connections.critical.spec.ts
+    allowed_file_prefixes: []
+    forbidden_files:
+      # Shared spec: edits here would collide with every other task in the batch.
+      - tests/e2e/critical-path.spec.ts
+      - tests/e2e/connections-detailed.spec.ts
+      # Owned by sibling tasks in this batch.
+      - tests/e2e/member-authz.critical.spec.ts
+      - tests/e2e/sale-lifecycle.critical.spec.ts
+      - tests/e2e/maintenance.critical.spec.ts
+      - tests/e2e/notes-ownership.critical.spec.ts
+      - tests/e2e/global-setup.ts
+      - tests/e2e/e2e-identities.ts
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: true
+    commit_message: 'test(e2e): add connections critical coverage'
+
+  - id: C
+    title: Member denial matrix critical coverage
+    branch: test/e2e-member-authz-critical
+    prompt: prompts/C-member-authz.md
+    depends_on: []
+    allowed_files:
+      - tests/e2e/member-authz.critical.spec.ts
+    allowed_file_prefixes: []
+    forbidden_files:
+      - tests/e2e/critical-path.spec.ts
+      - tests/e2e/auth.spec.ts
+      - tests/e2e/connections.critical.spec.ts
+      - tests/e2e/sale-lifecycle.critical.spec.ts
+      - tests/e2e/maintenance.critical.spec.ts
+      - tests/e2e/notes-ownership.critical.spec.ts
+      - tests/e2e/global-setup.ts
+      - tests/e2e/e2e-identities.ts
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: true
+    commit_message: 'test(e2e): add member authorization matrix'
+
+  - id: D
+    title: Sale lifecycle critical coverage
+    branch: test/e2e-sale-lifecycle-critical
+    prompt: prompts/D-sale-lifecycle.md
+    depends_on: []
+    allowed_files:
+      - tests/e2e/sale-lifecycle.critical.spec.ts
+    allowed_file_prefixes: []
+    forbidden_files:
+      - tests/e2e/critical-path.spec.ts
+      - tests/e2e/sales.spec.ts
+      - tests/e2e/connections.critical.spec.ts
+      - tests/e2e/member-authz.critical.spec.ts
+      - tests/e2e/maintenance.critical.spec.ts
+      - tests/e2e/notes-ownership.critical.spec.ts
+      - tests/e2e/global-setup.ts
+      - tests/e2e/e2e-identities.ts
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: true
+    commit_message: 'test(e2e): add sale lifecycle critical coverage'
+
+  - id: E
+    title: Maintenance CRUD critical coverage
+    branch: test/e2e-maintenance-critical
+    prompt: prompts/E-maintenance.md
+    depends_on: []
+    allowed_files:
+      - tests/e2e/maintenance.critical.spec.ts
+    allowed_file_prefixes: []
+    forbidden_files:
+      - tests/e2e/critical-path.spec.ts
+      - tests/e2e/calendar.spec.ts
+      - tests/e2e/connections.critical.spec.ts
+      - tests/e2e/member-authz.critical.spec.ts
+      - tests/e2e/sale-lifecycle.critical.spec.ts
+      - tests/e2e/notes-ownership.critical.spec.ts
+      - tests/e2e/global-setup.ts
+      - tests/e2e/e2e-identities.ts
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: true
+    commit_message: 'test(e2e): add maintenance critical coverage'
+
+  - id: F
+    title: Cross-tenant E2E foundation
+    branch: test/e2e-cross-tenant-foundation
+    prompt: prompts/F-cross-tenant-foundation.md
+    depends_on: []
+    # F owns the shared E2E identity/setup surface. It is the only task in this
+    # batch allowed to touch it, which is why every sibling forbids these files.
+    allowed_files:
+      - tests/e2e/global-setup.ts
+      - tests/e2e/e2e-identities.ts
+    allowed_file_prefixes:
+      - tests/e2e/cross-tenant/
+    forbidden_files:
+      - tests/e2e/critical-path.spec.ts
+      - tests/e2e/connections.critical.spec.ts
+      - tests/e2e/member-authz.critical.spec.ts
+      - tests/e2e/sale-lifecycle.critical.spec.ts
+      - tests/e2e/maintenance.critical.spec.ts
+      - tests/e2e/notes-ownership.critical.spec.ts
+      - tests/e2e/test-helpers.ts
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: true
+    commit_message: 'test(e2e): add cross-tenant foundation identities and setup'
+
+  - id: G1
+    title: Staging storage contract and fail-closed CI wiring
+    branch: ops/e2e-staging-storage
+    prompt: prompts/G1-staging-storage.md
+    depends_on: []
+    # The only task permitted near .github/workflows, and only the
+    # hosted-staging workflow. ci.yml stays frozen (see defaults).
+    allowed_files:
+      - .github/workflows/hosted-staging-integration.yml
+      - env.template
+    allowed_file_prefixes:
+      - docs/e2e-staging-storage
+      - scripts/staging/
+    forbidden_files:
+      - .github/workflows/security.yml
+      - .github/workflows/code-quality.yml
+      - .github/workflows/hosted-staging-db-reset.yml
+      - env.local
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: false
+    commit_message: 'ops: define staging storage contract and fail-closed CI wiring'
+
+  - id: H1
+    title: Notes ownership critical coverage
+    branch: test/e2e-notes-ownership-critical
+    prompt: prompts/H1-notes-ownership.md
+    depends_on: []
+    allowed_files:
+      - tests/e2e/notes-ownership.critical.spec.ts
+    allowed_file_prefixes: []
+    forbidden_files:
+      - tests/e2e/critical-path.spec.ts
+      # Invoice settings are explicitly out of scope for this task.
+      - tests/e2e/invoice-settings.spec.ts
+      - tests/e2e/connections.critical.spec.ts
+      - tests/e2e/member-authz.critical.spec.ts
+      - tests/e2e/sale-lifecycle.critical.spec.ts
+      - tests/e2e/maintenance.critical.spec.ts
+      - tests/e2e/global-setup.ts
+      - tests/e2e/e2e-identities.ts
+    validate:
+      - npm run type-check
+      - npm run lint
+    hosted_e2e_required: true
+    commit_message: 'test(e2e): add notes ownership critical coverage'

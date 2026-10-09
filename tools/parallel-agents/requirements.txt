@@ -1,0 +1,6 @@
+# Dependencies for tools/parallel-agents only.
+#
+# Install into a throwaway virtualenv (see README). Do NOT add these to any
+# repo-wide Python environment: this repo is a Node/TypeScript project and the
+# runner is standalone developer tooling.
+PyYAML==6.0.3
