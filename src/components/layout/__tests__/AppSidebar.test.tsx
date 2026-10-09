@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@/test-utils/render';
+import { fireEvent, render, screen, waitFor } from '@/test-utils/render';
 import { TestAuthProvider } from '@/test-utils/TestAuthProvider';
 import AppSidebar from '../AppSidebar';
 
@@ -10,8 +10,7 @@ jest.mock('next/link', () => {
   }: {
     href: string;
     children: React.ReactNode;
-    [key: string]: unknown;
-  }) => (
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
     <a href={href} {...props}>
       {children}
     </a>
@@ -79,5 +78,35 @@ describe('AppSidebar', () => {
     render(<AppSidebar isExpanded={false} currentPath="/clients" />);
 
     expect(screen.queryByText('Inventory App')).not.toBeInTheDocument();
+  });
+
+  it('marks the active destination as the current page', async () => {
+    render(<AppSidebar isExpanded currentPath="/clients" />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute(
+        'aria-current',
+        'page'
+      )
+    );
+    expect(screen.getByRole('link', { name: 'Items' })).not.toHaveAttribute(
+      'aria-current'
+    );
+  });
+
+  it('renders the shared navigation expanded and closes on mobile navigation', async () => {
+    const onNavigate = jest.fn();
+    render(
+      <AppSidebar
+        variant="mobile"
+        isExpanded={false}
+        currentPath="/calendar"
+        onNavigate={onNavigate}
+      />
+    );
+
+    expect(await screen.findByText('Inventory App')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('link', { name: 'Clients' }));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 });

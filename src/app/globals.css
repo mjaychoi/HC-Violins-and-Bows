@@ -26,12 +26,15 @@ body {
 .calendar-container {
   height: auto;
   min-height: 0;
+  padding: 1rem;
+  padding-bottom: 3rem;
 }
 
 @media (min-width: 768px) {
   .calendar-container {
     height: 100%;
     min-height: 700px;
+    overflow: visible;
   }
 }
 
@@ -147,6 +150,7 @@ body {
 .calendar-container .rbc-calendar {
   font-family: inherit;
   height: 100%;
+  min-height: 750px;
   display: flex;
   flex-direction: column;
 }
@@ -294,4 +298,26 @@ body {
 /* 날짜 셀 배경 강조 (+3 더보기 있는 날짜) */
 .calendar-container .rbc-day-bg.has-more {
   background-color: #f9fafb;
+}
+
+@media (max-width: 767px) {
+  .calendar-container {
+    height: 760px;
+    min-height: 760px;
+    padding: 0.5rem 0 1rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+  }
+
+  .calendar-container .rbc-calendar {
+    min-width: 560px;
+    min-height: 700px;
+  }
+
+  .calendar-container .rbc-month-row,
+  .calendar-container .rbc-day-bg,
+  .calendar-container .rbc-off-range-bg {
+    min-height: 110px;
+  }
 }

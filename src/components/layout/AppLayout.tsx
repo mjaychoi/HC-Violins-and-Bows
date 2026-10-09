@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTenantIdentity } from '@/hooks/useTenantIdentity';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppHeader, { type AppHeaderActionButton } from './AppHeader';
 import AppSidebar from './AppSidebar';
 import {
@@ -21,6 +21,8 @@ interface AppLayoutProps {
   hideSidebar?: boolean;
 }
 
+const MOBILE_NAVIGATION_ID = 'app-mobile-navigation';
+
 export default function AppLayout({
   title,
   children,
@@ -28,11 +30,70 @@ export default function AppLayout({
   headerActions = null,
   hideSidebar = false,
 }: AppLayoutProps) {
-  const { isExpanded, toggleSidebar } = useSidebarState();
+  const { isExpanded: desktopExpanded, toggleSidebar: toggleDesktopSidebar } =
+    useSidebarState();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileToggleRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const { user, loading, hasOrgContext } = useAuth();
   const { isTenantTransitioning } = useTenantIdentity();
   const router = useRouter();
+
+  const closeMobileNavigation = useCallback((restoreFocus = true) => {
+    setMobileOpen(false);
+    if (restoreFocus) {
+      window.setTimeout(() => mobileToggleRef.current?.focus(), 0);
+    }
+  }, []);
+
+  const toggleMobileNavigation = useCallback(() => {
+    setMobileOpen(open => {
+      if (open) {
+        window.setTimeout(() => mobileToggleRef.current?.focus(), 0);
+      }
+      return !open;
+    });
+  }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusTimer = window.setTimeout(() => {
+      const drawer = document.getElementById(MOBILE_NAVIGATION_ID);
+      drawer
+        ?.querySelector<HTMLAnchorElement>('a[aria-current="page"], a')
+        ?.focus();
+    }, 0);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeMobileNavigation();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, [closeMobileNavigation, mobileOpen]);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return;
+    const desktopQuery = window.matchMedia('(min-width: 1024px)');
+    const handleDesktopResize = (event: MediaQueryListEvent) => {
+      if (event.matches) closeMobileNavigation(false);
+    };
+    desktopQuery.addEventListener('change', handleDesktopResize);
+    return () =>
+      desktopQuery.removeEventListener('change', handleDesktopResize);
+  }, [closeMobileNavigation]);
 
   // Fail-closed client fallback when page middleware is bypassed or session
   // is cleared after hydration. Edge middleware remains the primary gate.
@@ -106,26 +167,65 @@ export default function AppLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="flex h-dvh min-h-screen flex-col overflow-hidden bg-gray-50">
       {/* Header */}
       <AppHeader
         title={title}
-        onToggleSidebar={toggleSidebar}
+        onToggleSidebar={toggleDesktopSidebar}
+        onToggleMobileNavigation={toggleMobileNavigation}
+        isMobileNavigationOpen={mobileOpen}
+        mobileNavigationId={MOBILE_NAVIGATION_ID}
+        mobileToggleRef={mobileToggleRef}
         hideSidebarToggle={hideSidebar}
         actionButton={actionButton}
         headerActions={headerActions}
       />
 
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Sidebar - 모바일에서도 닫힌 상태로 항상 표시 (사라지지 않게) */}
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {/* Desktop sidebar remains in normal flow at lg and above. */}
         {!hideSidebar && (
-          <div className="flex-shrink-0 transition-all duration-300 ease-in-out z-50">
-            <AppSidebar isExpanded={isExpanded} currentPath={pathname} />
+          <div
+            className="z-40 hidden flex-shrink-0 transition-all duration-300 ease-in-out lg:block"
+            data-testid="desktop-sidebar"
+          >
+            <AppSidebar
+              id="app-desktop-sidebar"
+              isExpanded={desktopExpanded}
+              currentPath={pathname}
+            />
+          </div>
+        )}
+
+        {!hideSidebar && mobileOpen && (
+          <div
+            className="absolute inset-0 z-50 lg:hidden"
+            data-testid="mobile-navigation-overlay"
+          >
+            <div
+              className="absolute inset-0 bg-gray-900/40"
+              data-testid="mobile-navigation-backdrop"
+              aria-hidden="true"
+              onClick={() => closeMobileNavigation()}
+            />
+            <div className="absolute inset-y-0 left-0">
+              <AppSidebar
+                id={MOBILE_NAVIGATION_ID}
+                variant="mobile"
+                isExpanded
+                currentPath={pathname}
+                onNavigate={() => closeMobileNavigation(false)}
+              />
+            </div>
           </div>
         )}
 
         {/* Main Content */}
-        <div className="flex-1 min-w-0 overflow-auto pb-8">{children}</div>
+        <main
+          className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-8"
+          data-testid="app-main-content"
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

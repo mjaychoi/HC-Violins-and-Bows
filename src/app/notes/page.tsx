@@ -12,7 +12,7 @@ export default function NotesPage() {
 
   return (
     <AppLayout title="Notes">
-      <div className="h-[calc(100vh-64px)] flex flex-col">
+      <div className="flex h-full min-h-0 flex-col">
         <NotesToolbar
           viewMode={notes.viewMode}
           isDesktop={notes.isDesktop}

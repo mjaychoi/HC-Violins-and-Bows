@@ -287,74 +287,70 @@ function CalendarContentInner({
   const rangeLabel = getViewRangeLabel(navigation.currentDate);
 
   return (
-    <div className="p-6 pb-14">
+    <div className="p-4 pb-14 sm:p-6 sm:pb-14">
       {isListView && (
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 mb-4 -mx-6 px-6 py-3 shadow-sm">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 flex-1">
-              <h2 className="text-lg font-semibold text-gray-900">
-                Tasks in {rangeLabel}
-                {hasActiveFilters && (
-                  <span className="ml-2 text-sm font-normal text-gray-500">
-                    ({filteredTasks.length} of {tasks.length})
-                  </span>
-                )}
-                {!hasActiveFilters && (
-                  <span className="ml-2 text-sm font-normal text-gray-500">
-                    ({tasks.length})
-                  </span>
-                )}
-              </h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap">
-                <button
-                  type="button"
-                  onClick={() => applyPreset('overdue')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                    activePreset === 'overdue'
-                      ? 'bg-red-100 text-red-700 border border-red-300'
-                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Overdue
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('today')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                    activePreset === 'today'
-                      ? 'bg-green-100 text-green-700 border border-green-300'
-                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => applyPreset('upcoming')}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                    activePreset === 'upcoming'
-                      ? 'bg-purple-100 text-purple-700 border border-purple-300'
-                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Next 7d
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFilterStatus('completed');
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
-                    filterStatus === 'completed'
-                      ? 'bg-gray-100 text-gray-700 border border-gray-300'
-                      : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  Completed
-                </button>
-              </div>
+        <div className="sticky top-0 z-10 mb-4 -mx-4 border-b border-gray-200 bg-white px-4 py-3 shadow-sm sm:-mx-6 sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="min-w-0 text-lg font-semibold text-gray-900">
+              Tasks in {rangeLabel}
+              {hasActiveFilters && (
+                <span className="ml-2 text-sm font-normal text-gray-500">
+                  ({filteredTasks.length} of {tasks.length})
+                </span>
+              )}
+              {!hasActiveFilters && (
+                <span className="ml-2 text-sm font-normal text-gray-500">
+                  ({tasks.length})
+                </span>
+              )}
+            </h2>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => applyPreset('overdue')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                  activePreset === 'overdue'
+                    ? 'bg-red-100 text-red-700 border border-red-300'
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Overdue
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('today')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                  activePreset === 'today'
+                    ? 'bg-green-100 text-green-700 border border-green-300'
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => applyPreset('upcoming')}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                  activePreset === 'upcoming'
+                    ? 'bg-purple-100 text-purple-700 border border-purple-300'
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Next 7d
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterStatus('completed');
+                }}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition ${
+                  filterStatus === 'completed'
+                    ? 'bg-gray-100 text-gray-700 border border-gray-300'
+                    : 'bg-white text-gray-600 border border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                Completed
+              </button>
             </div>
           </div>
         </div>
@@ -362,7 +358,7 @@ function CalendarContentInner({
 
       <div className="mb-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-0.5">
               <button
                 onClick={navigation.handlePrevious}
@@ -410,31 +406,33 @@ function CalendarContentInner({
 
             <div className="hidden md:block h-6 w-px bg-gray-300" />
 
-            <CalendarSummary
-              total={summaryStats.total}
-              overdue={summaryStats.overdue}
-              today={summaryStats.today}
-              upcoming={summaryStats.upcoming}
-              onFilterByStatus={handleSummaryCardClick}
-              onOpenFilters={() => {
-                const newValue = !filtersOpen;
-                setFiltersOpen(newValue);
-                if (newValue && isCalendarView) {
-                  setTimeout(() => {
-                    searchInputRef.current?.focus();
-                  }, 0);
-                } else if (!newValue && filtersToggleRef.current) {
-                  filtersToggleRef.current.focus();
-                }
-              }}
-              hasActiveFilters={hasActiveFilters}
-              activePreset={activePreset}
-              filtersOpen={filtersOpen}
-              toggleButtonRef={filtersToggleRef}
-            />
+            <div className="w-full min-w-0 md:w-auto">
+              <CalendarSummary
+                total={summaryStats.total}
+                overdue={summaryStats.overdue}
+                today={summaryStats.today}
+                upcoming={summaryStats.upcoming}
+                onFilterByStatus={handleSummaryCardClick}
+                onOpenFilters={() => {
+                  const newValue = !filtersOpen;
+                  setFiltersOpen(newValue);
+                  if (newValue && isCalendarView) {
+                    setTimeout(() => {
+                      searchInputRef.current?.focus();
+                    }, 0);
+                  } else if (!newValue && filtersToggleRef.current) {
+                    filtersToggleRef.current.focus();
+                  }
+                }}
+                hasActiveFilters={hasActiveFilters}
+                activePreset={activePreset}
+                filtersOpen={filtersOpen}
+                toggleButtonRef={filtersToggleRef}
+              />
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
             <button
               onClick={navigation.handleGoToToday}
               className="flex h-9 items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"

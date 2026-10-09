@@ -6,13 +6,18 @@ import { usePermissions } from '@/hooks/usePermissions';
 
 interface AppSidebarProps {
   isExpanded: boolean;
-  // onToggle: () => void
   currentPath: string;
+  id?: string;
+  variant?: 'desktop' | 'mobile';
+  onNavigate?: () => void;
 }
 
 export default function AppSidebar({
   isExpanded,
   currentPath,
+  id,
+  variant = 'desktop',
+  onNavigate,
 }: AppSidebarProps) {
   // ✅ FIXED: hydration mismatch 해결 방식 단순화 - mounted 이후에만 isExpanded 반영
   const [mounted, setMounted] = useState(false);
@@ -21,7 +26,7 @@ export default function AppSidebar({
     setMounted(true);
   }, []);
 
-  const expanded = mounted ? isExpanded : false;
+  const expanded = variant === 'mobile' ? true : mounted ? isExpanded : false;
   const { canViewInvoices } = usePermissions();
   const navigationItems = useMemo(
     () => [
@@ -142,10 +147,13 @@ export default function AppSidebar({
   );
 
   return (
-    <div
-      className={`bg-white shadow-lg transition-all duration-300 ease-in-out h-full ${
-        expanded ? 'w-64' : 'w-16'
-      } overflow-hidden`}
+    <aside
+      id={id}
+      data-variant={variant}
+      aria-label={variant === 'mobile' ? 'Mobile navigation' : 'Sidebar'}
+      className={`h-full overflow-hidden bg-white shadow-lg transition-all duration-300 ease-in-out ${
+        variant === 'mobile' ? 'w-64 max-w-[85vw]' : expanded ? 'w-64' : 'w-16'
+      }`}
     >
       <div className="p-4">
         {expanded && (
@@ -171,7 +179,10 @@ export default function AppSidebar({
           </div>
         )}
 
-        <nav className="space-y-1">
+        <nav
+          className="space-y-1"
+          aria-label={variant === 'mobile' ? 'Mobile primary' : 'Primary'}
+        >
           {navigationItems.map(item => {
             // Check if current path matches the href exactly
             // For sub-routes, we need exact match to avoid multiple active states
@@ -188,6 +199,7 @@ export default function AppSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onNavigate}
                 aria-current={isActive ? 'page' : undefined}
                 className={`py-3 cursor-pointer transition-all duration-300 ${
                   expanded ? 'px-6 justify-start' : 'px-4 justify-center'
@@ -217,6 +229,6 @@ export default function AppSidebar({
           })}
         </nav>
       </div>
-    </div>
+    </aside>
   );
 }

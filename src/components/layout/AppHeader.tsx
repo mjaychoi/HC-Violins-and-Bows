@@ -15,6 +15,10 @@ export interface AppHeaderActionButton {
 interface AppHeaderProps {
   title: string;
   onToggleSidebar: () => void;
+  onToggleMobileNavigation: () => void;
+  isMobileNavigationOpen: boolean;
+  mobileNavigationId: string;
+  mobileToggleRef?: React.RefObject<HTMLButtonElement | null>;
   hideSidebarToggle?: boolean;
   actionButton?: AppHeaderActionButton;
   headerActions?: React.ReactNode;
@@ -23,6 +27,10 @@ interface AppHeaderProps {
 export default function AppHeader({
   title,
   onToggleSidebar,
+  onToggleMobileNavigation,
+  isMobileNavigationOpen,
+  mobileNavigationId,
+  mobileToggleRef,
   hideSidebarToggle = false,
   actionButton,
   headerActions,
@@ -36,36 +44,61 @@ export default function AppHeader({
   };
 
   return (
-    <div className="bg-white shadow-sm border-b">
-      <div className="px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center py-4">
+    <header className="flex-none border-b bg-white shadow-sm">
+      <div className="px-3 sm:px-6 lg:px-8">
+        <div className="flex items-center justify-between py-4">
           {/* 좌측: 토글 + 브레드크럼 + 타이틀 */}
-          <div className="flex items-center min-w-0">
-            {/* Sidebar toggle slot: always 64px wide */}
-            <div className="w-16 flex items-center justify-center">
+          <div className="flex min-w-0 flex-1 items-center">
+            <div className="flex w-10 shrink-0 items-center justify-center lg:w-16">
               {!hideSidebarToggle && (
-                <button
-                  onClick={onToggleSidebar}
-                  className="p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  aria-label="Toggle sidebar"
-                >
-                  <svg
-                    className="h-6 w-6"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                <>
+                  <button
+                    ref={mobileToggleRef}
+                    onClick={onToggleMobileNavigation}
+                    className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:hidden"
+                    aria-label="Toggle navigation"
+                    aria-expanded={isMobileNavigationOpen}
+                    aria-controls={mobileNavigationId}
                   >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 6h16M4 12h16M4 18h16"
-                    />
-                  </svg>
-                </button>
+                    <svg
+                      className="h-6 w-6"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 6h16M4 12h16M4 18h16"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={onToggleSidebar}
+                    className="hidden rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 lg:inline-flex"
+                    aria-label="Toggle sidebar"
+                  >
+                    <svg
+                      className="h-6 w-6"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 6h16M4 12h16M4 18h16"
+                      />
+                    </svg>
+                  </button>
+                </>
               )}
             </div>
-            <div className="flex flex-col ml-2 sm:ml-4 min-w-0">
+            <div className="ml-2 flex min-w-0 flex-1 flex-col sm:ml-4">
               <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 truncate">
                 {title}
               </h1>
@@ -73,7 +106,7 @@ export default function AppHeader({
           </div>
 
           {/* 우측: 액션/유저 영역 */}
-          <div className="flex items-center space-x-2 sm:space-x-4">
+          <div className="ml-2 flex shrink-0 items-center space-x-1 sm:space-x-4">
             {headerActions && (
               <div className="hidden sm:flex items-center">{headerActions}</div>
             )}
@@ -128,6 +161,6 @@ export default function AppHeader({
           </div>
         </div>
       </div>
-    </div>
+    </header>
   );
 }

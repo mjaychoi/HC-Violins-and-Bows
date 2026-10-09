@@ -20,6 +20,15 @@ export const useCalendarView = () => {
     }
   }, [hasInitializedMobileDefault]);
 
+  useEffect(() => {
+    if (
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 767px)').matches
+    ) {
+      setView('list');
+    }
+  }, []);
+
   const setViewMode = useCallback((mode: CalendarViewMode) => {
     setView(mode);
   }, []);
