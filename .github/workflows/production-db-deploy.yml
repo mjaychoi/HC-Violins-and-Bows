@@ -146,6 +146,11 @@ jobs:
           EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
         run: npx tsx scripts/production/db-probe.ts validate-only
 
+      - name: Install trusted production database CA
+        env:
+          PRODUCTION_DATABASE_CA_CERT: ${{ secrets.PRODUCTION_DATABASE_CA_CERT }}
+        run: bash scripts/production/install-database-ca.sh
+
       - name: Read-only connectivity probe (SELECT 1)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -227,7 +232,10 @@ jobs:
         id: apply
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: supabase db push --db-url "$DATABASE_URL" --include-all --yes
+        run: |
+          # Capture the credential-bearing URL; never print it or enable xtrace.
+          verified_url="$(npx tsx scripts/production/format-libpq-verify-full-url.ts)"
+          supabase db push --db-url "$verified_url" --include-all --yes
 
       - name: Post-deploy catalog postflight (authoritative, blocking)
         id: postflight
@@ -256,6 +264,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npm run schema:ready
+
+      - name: Remove runner-temp production database CA
+        if: always()
+        run: rm -f "$RUNNER_TEMP/production-database-ca.crt"
 
       - name: Deployment summary
         if: always()

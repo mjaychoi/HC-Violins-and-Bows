@@ -1,4 +1,4 @@
-import type { APIResponse, Page } from '@playwright/test';
+import type { APIResponse } from '@playwright/test';
 import * as fs from 'fs';
 
 import {
@@ -8,6 +8,7 @@ import {
   getE2ELogoutAdminIdentity,
 } from './e2e-identities';
 import { freshSessionStorageState } from './fresh-session-state';
+import { withRouteCleanup } from './route-cleanup';
 // Fails any test whose page hits a same-origin /api 5xx or a pageerror,
 // even when the test body never asserts that background request.
 import { expect, test } from './critical-test';
@@ -46,12 +47,6 @@ async function expectOkJson(response: APIResponse) {
   const body = await response.text();
   expect(response.ok(), body).toBe(true);
   return JSON.parse(body);
-}
-
-async function cleanup(page: Page, paths: string[]) {
-  for (const requestPath of paths.reverse()) {
-    await page.request.delete(requestPath).catch(() => undefined);
-  }
 }
 
 const logoutAdminState = freshSessionStorageState(getE2ELogoutAdminIdentity());
@@ -136,7 +131,7 @@ test.describe('Critical path', () => {
       {
         tag: '@critical',
       },
-      async ({ page }) => {
+      async ({ page }, testInfo) => {
         await page.goto('/dashboard', {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
@@ -145,25 +140,27 @@ test.describe('Critical path', () => {
         await assertCookieBackedAuth(page);
         const suffix = uniqueSuffix();
         const firstName = `Crit ${suffix}`;
-        const createResponse = await page.request.post('/api/clients', {
-          data: clientCreatePayload({
-            firstName,
-            lastName: 'Path',
-            email: `crit-${suffix}@example.com`,
-            note: suffix,
-          }),
-        });
-        const created = await expectOkJson(createResponse);
-        const client = created.data as {
-          id: string;
-          first_name: string;
-          last_name: string;
-          updated_at: string;
-        };
-        expect(client.id).toBeTruthy();
-        const cleanupPaths = [`/api/clients?id=${client.id}`];
 
-        try {
+        await withRouteCleanup(page, testInfo, async cleanup => {
+          const createResponse = await page.request.post('/api/clients', {
+            data: clientCreatePayload({
+              firstName,
+              lastName: 'Path',
+              email: `crit-${suffix}@example.com`,
+              note: suffix,
+            }),
+          });
+          const created = await expectOkJson(createResponse);
+          const client = created.data as {
+            id: string;
+            first_name: string;
+            last_name: string;
+            updated_at: string;
+          };
+          expect(client.id).toBeTruthy();
+          const clientPath = `/api/clients?id=${client.id}`;
+          cleanup.register('client', clientPath);
+
           const readResponse = await page.request.get(
             `/api/clients?search=${encodeURIComponent(suffix)}`
           );
@@ -192,11 +189,9 @@ test.describe('Critical path', () => {
           await waitForPageLoad(page, 20000, { skipNetworkIdle: true });
           await expect(page.getByText(updatedName).first()).toBeVisible();
 
-          const deleteResponse = await page.request.delete(
-            `/api/clients?id=${client.id}`
-          );
+          const deleteResponse = await page.request.delete(clientPath);
           expect(deleteResponse.ok(), await deleteResponse.text()).toBe(true);
-          cleanupPaths.length = 0;
+          cleanup.release(clientPath);
 
           const afterDelete = await expectOkJson(
             await page.request.get(
@@ -208,25 +203,23 @@ test.describe('Critical path', () => {
               row => row.id === client.id
             )
           ).toBe(false);
-        } finally {
-          await cleanup(page, cleanupPaths);
-        }
+        });
       }
     );
 
     // Regression coverage for issue #152: DELETE /api/instruments returned 500
     // on every call (it prefetched storage keys filtering a nonexistent
     // instrument_images.org_id / instrument_certificates.org_id column), and no
-    // critical-path test ever asserted an instrument delete. The sale/invoice
-    // test below does register an instrument cleanup path, but cleanup()
-    // swallows failures, so the 500 stayed invisible. This test asserts the
-    // delete explicitly and only ever removes the instrument it created.
+    // critical-path test asserted that delete. The old cleanup helper swallowed
+    // the 500, so the sale/invoice path could not see it. This test still
+    // asserts the delete and the follow-up 404 explicitly. release() runs only
+    // after that delete succeeds, so cleanup does not delete the same row twice.
     test(
       'creates and deletes an instrument',
       {
         tag: '@critical',
       },
-      async ({ page }) => {
+      async ({ page }, testInfo) => {
         await page.goto('/dashboard', {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
@@ -234,52 +227,41 @@ test.describe('Critical path', () => {
         await waitForPageLoad(page, 15000, { skipNetworkIdle: true });
         await assertCookieBackedAuth(page);
 
-        const suffix = uniqueSuffix();
-        const createdJson = await expectOkJson(
-          await page.request.post('/api/instruments', {
-            data: {
-              type: 'Violin',
-              maker: `Delete Path ${suffix}`,
-              year: 2026,
-              price: 1200,
-              status: 'Available',
-              ownership: 'owned',
-              note: suffix,
-            },
-          })
-        );
-        const instrumentId = createdJson.data.id as string;
-        expect(instrumentId).toBeTruthy();
-        const cleanupPaths = [`/api/instruments?id=${instrumentId}`];
-
-        try {
-          // The instrument exists before the delete.
-          expect(
-            (
-              await page.request.get(`/api/instruments?id=${instrumentId}`)
-            ).status()
-          ).toBe(200);
-
-          const deleteResponse = await page.request.delete(
-            `/api/instruments?id=${instrumentId}`
+        await withRouteCleanup(page, testInfo, async cleanup => {
+          const suffix = uniqueSuffix();
+          const createdJson = await expectOkJson(
+            await page.request.post('/api/instruments', {
+              data: {
+                type: 'Violin',
+                maker: `Delete Path ${suffix}`,
+                year: 2026,
+                price: 1200,
+                status: 'Available',
+                ownership: 'owned',
+                note: suffix,
+              },
+            })
           );
+          const instrumentId = createdJson.data.id as string;
+          expect(instrumentId).toBeTruthy();
+          const instrumentPath = `/api/instruments?id=${instrumentId}`;
+          cleanup.register('instrument', instrumentPath);
+
+          // The instrument exists before the delete.
+          expect((await page.request.get(instrumentPath)).status()).toBe(200);
+
+          const deleteResponse = await page.request.delete(instrumentPath);
           const deleteBody = await deleteResponse.text();
 
           // Before the fix this was a 500 with
           // "column instrument_images.org_id does not exist".
           expect(deleteResponse.status(), deleteBody).toBe(200);
           expect(JSON.parse(deleteBody).success).toBe(true);
-          cleanupPaths.length = 0;
+          cleanup.release(instrumentPath);
 
           // And it is actually gone, not merely error-free.
-          expect(
-            (
-              await page.request.get(`/api/instruments?id=${instrumentId}`)
-            ).status()
-          ).toBe(404);
-        } finally {
-          await cleanup(page, cleanupPaths);
-        }
+          expect((await page.request.get(instrumentPath)).status()).toBe(404);
+        });
       }
     );
 
@@ -288,7 +270,7 @@ test.describe('Critical path', () => {
       {
         tag: '@critical',
       },
-      async ({ page }) => {
+      async ({ page }, testInfo) => {
         await page.goto('/dashboard', {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
@@ -297,9 +279,8 @@ test.describe('Critical path', () => {
         await assertCookieBackedAuth(page);
         const suffix = uniqueSuffix();
         const saleDate = todayIsoDate();
-        const cleanupPaths: string[] = [];
 
-        try {
+        await withRouteCleanup(page, testInfo, async cleanup => {
           const clientJson = await expectOkJson(
             await page.request.post('/api/clients', {
               data: clientCreatePayload({
@@ -311,7 +292,7 @@ test.describe('Critical path', () => {
             })
           );
           const clientId = clientJson.data.id as string;
-          cleanupPaths.push(`/api/clients?id=${clientId}`);
+          cleanup.register('client', `/api/clients?id=${clientId}`);
 
           const instrumentJson = await expectOkJson(
             await page.request.post('/api/instruments', {
@@ -327,7 +308,7 @@ test.describe('Critical path', () => {
             })
           );
           const instrumentId = instrumentJson.data.id as string;
-          cleanupPaths.push(`/api/instruments?id=${instrumentId}`);
+          cleanup.register('instrument', `/api/instruments?id=${instrumentId}`);
 
           const saleResponse = await page.request.post('/api/sales', {
             headers: { 'Idempotency-Key': `e2e-sale-${suffix}` },
@@ -387,7 +368,9 @@ test.describe('Critical path', () => {
           const invoiceCreated = await expectOkJson(invoiceResponse);
           expect(invoiceResponse.status()).toBe(201);
           const invoiceId = invoiceCreated.data.id as string;
-          cleanupPaths.push(`/api/invoices/${invoiceId}`);
+          // Registered last so cleanup deletes the invoice before the
+          // instrument and client it depends on.
+          cleanup.register('invoice', `/api/invoices/${invoiceId}`);
 
           const invoiceGet = await expectOkJson(
             await page.request.get(`/api/invoices/${invoiceId}`)
@@ -427,9 +410,7 @@ test.describe('Critical path', () => {
           ).toBe(200);
           const contentType = pdfResponse.headers()['content-type'] || '';
           expect(contentType).toMatch(/pdf|octet-stream/i);
-        } finally {
-          await cleanup(page, cleanupPaths);
-        }
+        });
       }
     );
   });

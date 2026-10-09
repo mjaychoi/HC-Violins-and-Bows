@@ -6,14 +6,13 @@ import { useDashboardForm } from '../hooks/useDashboardForm';
 import { validateInstrumentData } from '../utils/dashboardUtils';
 import { classNames } from '@/utils/classNames';
 import { Button, Input } from '@/components/common/inputs';
-import { useOutsideClose } from '@/hooks/useOutsideClose';
 import {
   generateInstrumentSerialNumber,
   normalizeInstrumentSerial,
   validateInstrumentSerial,
 } from '@/utils/uniqueNumberGenerator';
 import { modalStyles } from '@/components/common/modals/modalStyles';
-import { ModalHeader } from '@/components/common/modals/ModalHeader';
+import Modal from '@/components/common/modals/Modal';
 import {
   INSTRUMENT_CONFLICT_MESSAGE,
   INSTRUMENT_RELOAD_LATEST_LABEL,
@@ -434,423 +433,402 @@ function ItemForm({
     }
   };
 
-  // Close modal with ESC key and outside click
-  // FIXED: Use only useOutsideClose to avoid double close handling
-  const modalRef = useRef<HTMLDivElement>(null);
-  useOutsideClose(modalRef, {
-    isOpen,
-    onClose,
-  });
-
-  if (!isOpen) return null;
-
   return (
-    <div
-      className={modalStyles.overlay}
-      onClick={e => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
-      }}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Edit Item' : 'Add New Item'}
+      titleId="item-form-title"
+      icon="item"
+      size="lg"
+      overlayClassName={modalStyles.overlay}
+      className="mx-4 rounded-xl animate-in zoom-in-95 duration-200"
+      padded={false}
     >
-      <div
-        ref={modalRef}
-        className={modalStyles.container}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="item-form-title"
-      >
-        <ModalHeader
-          title={isEditing ? 'Edit Item' : 'Add New Item'}
-          icon="item"
-          onClose={onClose}
-          titleId="item-form-title"
-        />
-        <div className={modalStyles.body}>
-          {/* UX: Success message with action buttons */}
-          {success && !isEditing && (
-            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <div className="flex items-start">
-                <svg
-                  className="w-5 h-5 text-green-600 mt-0.5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <div className="ml-3 flex-1">
-                  <h4 className="text-sm font-medium text-green-800">
-                    Item created successfully!
-                  </h4>
-                  <p className="mt-1 text-sm text-green-700">
-                    What would you like to do next?
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        // FIXED: Clear errors when switching back to create form
-                        setErrors([]);
-                        setSuccess(false);
-                        resetForm();
-                        updateField('certificate', false);
-                        updateField('certificate_name', '');
-                        // Auto-generate new serial for next item
-                        const autoSerialNumber = generateInstrumentSerialNumber(
-                          null,
-                          existingSerialNumbers
-                        );
-                        lastAutoSerialRef.current = autoSerialNumber;
-                        updateField('serial_number', autoSerialNumber);
-                        hasInitializedCreate.current = true;
-                      }}
-                      variant="secondary"
-                      size="sm"
-                      className="!bg-white !border !border-green-300 !text-green-700 hover:!bg-green-50"
-                    >
-                      Add Another
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        // FIXED: Clear errors on Done
-                        setErrors([]);
-                        setSuccess(false);
-                        resetForm();
-                        onClose();
-                      }}
-                      variant="success"
-                      size="sm"
-                    >
-                      Done
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {(formError || isConflict) && (
-            <div
-              className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded"
-              data-testid={isConflict ? 'item-conflict-banner' : undefined}
-            >
-              <p className="text-sm">
-                {formError || INSTRUMENT_CONFLICT_MESSAGE}
-              </p>
-              {isConflict ? (
-                <div className="mt-3">
+      <div className={modalStyles.body}>
+        {/* UX: Success message with action buttons */}
+        {success && !isEditing && (
+          <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-start">
+              <svg
+                className="w-5 h-5 text-green-600 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div className="ml-3 flex-1">
+                <h4 className="text-sm font-medium text-green-800">
+                  Item created successfully!
+                </h4>
+                <p className="mt-1 text-sm text-green-700">
+                  What would you like to do next?
+                </p>
+                <div className="mt-3 flex gap-2">
                   <Button
                     type="button"
+                    onClick={() => {
+                      // FIXED: Clear errors when switching back to create form
+                      setErrors([]);
+                      setSuccess(false);
+                      resetForm();
+                      updateField('certificate', false);
+                      updateField('certificate_name', '');
+                      // Auto-generate new serial for next item
+                      const autoSerialNumber = generateInstrumentSerialNumber(
+                        null,
+                        existingSerialNumbers
+                      );
+                      lastAutoSerialRef.current = autoSerialNumber;
+                      updateField('serial_number', autoSerialNumber);
+                      hasInitializedCreate.current = true;
+                    }}
                     variant="secondary"
                     size="sm"
-                    onClick={handleReloadLatest}
+                    className="!bg-white !border !border-green-300 !text-green-700 hover:!bg-green-50"
                   >
-                    {INSTRUMENT_RELOAD_LATEST_LABEL}
+                    Add Another
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      // FIXED: Clear errors on Done
+                      setErrors([]);
+                      setSuccess(false);
+                      resetForm();
+                      onClose();
+                    }}
+                    variant="success"
+                    size="sm"
+                  >
+                    Done
                   </Button>
                 </div>
-              ) : null}
+              </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {errors.length > 0 && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              <ul className="list-disc list-inside">
-                {errors.map((error, index) => (
-                  <li key={index}>{error}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-4"
-            style={{ display: success && !isEditing ? 'none' : 'block' }}
+        {(formError || isConflict) && (
+          <div
+            className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded"
+            data-testid={isConflict ? 'item-conflict-banner' : undefined}
           >
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="maker"
-                label="Maker"
-                name="maker"
-                value={formData.maker}
-                onChange={handleInputChange}
-                placeholder="Enter maker name"
-                helperText="The manufacturer or brand name of the instrument"
-              />
-
-              <Input
-                id="type"
-                label="Type"
-                name="type"
-                value={formData.type}
-                onChange={handleInputChange}
-                placeholder="Enter type"
-                helperText="Primary category (e.g., Violin, Viola, Cello, Bow)"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="subtype"
-                label="Subtype"
-                name="subtype"
-                value={formData.subtype}
-                onChange={handleInputChange}
-                placeholder="Enter subtype"
-              />
-
-              <Input
-                id="year"
-                label="Year"
-                name="year"
-                type="number"
-                value={formData.year}
-                onChange={handleInputChange}
-                placeholder="Enter year"
-                error={fieldErrors.year}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={classNames.formLabel} htmlFor="status">
-                  Status
-                </label>
-                <select
-                  id="status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleInputChange}
-                  className={classNames.input}
+            <p className="text-sm">
+              {formError || INSTRUMENT_CONFLICT_MESSAGE}
+            </p>
+            {isConflict ? (
+              <div className="mt-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleReloadLatest}
                 >
-                  <option value="Available">Available</option>
-                  <option value="Booked">Booked</option>
-                  {isEditing && <option value="Sold">Sold</option>}
-                  {isEditing && <option value="Reserved">Reserved</option>}
-                  <option value="Maintenance">Maintenance</option>
-                </select>
-                {!isEditing && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Sold status is set automatically through the sales flow.
-                  </p>
-                )}
-                {!isEditing && (
-                  <p className="mt-1 text-xs text-gray-500">
-                    Reserved status can be set after creation.
-                  </p>
-                )}
+                  {INSTRUMENT_RELOAD_LATEST_LABEL}
+                </Button>
               </div>
+            ) : null}
+          </div>
+        )}
 
-              <Input
-                id="price"
-                label="Retail Price"
-                name="price"
-                type="text"
-                inputMode="decimal"
-                value={priceInput}
-                onChange={e => handlePriceChange(e.target.value)}
-                placeholder="Enter retail price"
-                error={fieldErrors.price}
-              />
-            </div>
+        {errors.length > 0 && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            <ul className="list-disc list-inside">
+              {errors.map((error, index) => (
+                <li key={index}>{error}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-            {isEditing && formData.status === 'Reserved' && (
-              <Input
-                id="reserved_reason"
-                label="Reservation Reason"
-                name="reserved_reason"
-                value={formData.reserved_reason}
-                onChange={handleInputChange}
-                placeholder="Why is this instrument reserved?"
-                error={fieldErrors.reserved_reason}
-                helperText="Required while status is Reserved."
-                required
-              />
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="cost_price"
-                label="Cost Price"
-                name="cost_price"
-                type="text"
-                inputMode="decimal"
-                value={costPriceInput}
-                onChange={e => handleCostPriceChange(e.target.value)}
-                placeholder="Enter cost price"
-                error={fieldErrors.cost_price}
-              />
-
-              <Input
-                id="consignment_price"
-                label="Consignment Price"
-                name="consignment_price"
-                type="text"
-                inputMode="decimal"
-                value={consignmentPriceInput}
-                onChange={e => handleConsignmentPriceChange(e.target.value)}
-                placeholder="Enter consignment price"
-                error={fieldErrors.consignment_price}
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={classNames.formLabel} htmlFor="certificate">
-                  Certificate
-                </label>
-                <select
-                  id="certificate"
-                  name="certificate"
-                  value={formData.certificate ? 'yes' : 'no'}
-                  onChange={e => {
-                    const isYes = e.target.value === 'yes';
-                    updateField('certificate', isYes);
-                    if (!isYes) {
-                      updateField('certificate_name', '');
-                    }
-                  }}
-                  className={classNames.input}
-                >
-                  <option value="no">No</option>
-                  <option value="yes">Yes</option>
-                </select>
-              </div>
-              {formData.certificate ? (
-                <Input
-                  id="certificate_name"
-                  label="Certificate Name"
-                  name="certificate_name"
-                  value={formData.certificate_name}
-                  onChange={handleInputChange}
-                  placeholder="Enter certificate name"
-                  helperText="Shown in the Item list. Certificate PDFs are uploaded after creation."
-                />
-              ) : (
-                <div className="flex items-end">
-                  <p className="text-xs text-gray-500">
-                    Upload certificate files after the instrument is created.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                id="size"
-                label="Size"
-                name="size"
-                value={formData.size}
-                onChange={handleInputChange}
-                placeholder="Enter size"
-              />
-
-              <Input
-                id="weight"
-                label="Weight"
-                name="weight"
-                value={formData.weight}
-                onChange={handleInputChange}
-                placeholder="Enter weight"
-              />
-            </div>
-
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4"
+          style={{ display: success && !isEditing ? 'none' : 'block' }}
+        >
+          <div className="grid grid-cols-2 gap-4">
             <Input
-              id="ownership"
-              label="Ownership"
-              name="ownership"
-              value={formData.ownership}
+              id="maker"
+              label="Maker"
+              name="maker"
+              value={formData.maker}
               onChange={handleInputChange}
-              placeholder="Enter ownership info"
+              placeholder="Enter maker name"
+              helperText="The manufacturer or brand name of the instrument"
             />
 
+            <Input
+              id="type"
+              label="Type"
+              name="type"
+              value={formData.type}
+              onChange={handleInputChange}
+              placeholder="Enter type"
+              helperText="Primary category (e.g., Violin, Viola, Cello, Bow)"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              id="subtype"
+              label="Subtype"
+              name="subtype"
+              value={formData.subtype}
+              onChange={handleInputChange}
+              placeholder="Enter subtype"
+            />
+
+            <Input
+              id="year"
+              label="Year"
+              name="year"
+              type="number"
+              value={formData.year}
+              onChange={handleInputChange}
+              placeholder="Enter year"
+              error={fieldErrors.year}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={classNames.formLabel} htmlFor="serial_number">
-                Serial Number
-                {!isEditing && (
-                  <span className="ml-2 text-xs text-gray-500">
-                    (auto-generated)
-                  </span>
-                )}
+              <label className={classNames.formLabel} htmlFor="status">
+                Status
               </label>
-              <input
-                id="serial_number"
-                type="text"
-                name="serial_number"
-                value={formData.serial_number}
+              <select
+                id="status"
+                name="status"
+                value={formData.status}
                 onChange={handleInputChange}
-                disabled={!isEditing}
-                // ✅ NOTE: pattern은 UX 힌트용일 뿐, 실제 검증은 validateInstrumentSerial에서 수행
-                // 규칙이 변경되면 normalizeInstrumentSerial과 validateInstrumentSerial도 함께 업데이트 필요
-                pattern="[A-Za-z]{2}[0-9]{7}"
-                title="2 letters + 7 digits (e.g., VI0000123)"
-                className={
-                  (fieldErrors.serial_number
-                    ? classNames.inputError
-                    : classNames.input) +
-                  (isEditing ? '' : ' bg-gray-100 cursor-not-allowed')
-                }
-                placeholder={
-                  isEditing
-                    ? 'Enter serial number (e.g., VI0000123, BO0000456)'
-                    : 'Auto-generated'
-                }
-              />
-              {fieldErrors.serial_number && (
-                <p className={classNames.formError}>
-                  {fieldErrors.serial_number}
+                className={classNames.input}
+              >
+                <option value="Available">Available</option>
+                <option value="Booked">Booked</option>
+                {isEditing && <option value="Sold">Sold</option>}
+                {isEditing && <option value="Reserved">Reserved</option>}
+                <option value="Maintenance">Maintenance</option>
+              </select>
+              {!isEditing && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Sold status is set automatically through the sales flow.
                 </p>
               )}
               {!isEditing && (
-                <p className="mt-1 text-xs text-gray-500 italic">
-                  Updates automatically when you change the type.
+                <p className="mt-1 text-xs text-gray-500">
+                  Reserved status can be set after creation.
                 </p>
               )}
             </div>
 
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              Images are added after creation from the instrument detail view.
-            </div>
+            <Input
+              id="price"
+              label="Retail Price"
+              name="price"
+              type="text"
+              inputMode="decimal"
+              value={priceInput}
+              onChange={e => handlePriceChange(e.target.value)}
+              placeholder="Enter retail price"
+              error={fieldErrors.price}
+            />
+          </div>
 
+          {isEditing && formData.status === 'Reserved' && (
+            <Input
+              id="reserved_reason"
+              label="Reservation Reason"
+              name="reserved_reason"
+              value={formData.reserved_reason}
+              onChange={handleInputChange}
+              placeholder="Why is this instrument reserved?"
+              error={fieldErrors.reserved_reason}
+              helperText="Required while status is Reserved."
+              required
+            />
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              id="cost_price"
+              label="Cost Price"
+              name="cost_price"
+              type="text"
+              inputMode="decimal"
+              value={costPriceInput}
+              onChange={e => handleCostPriceChange(e.target.value)}
+              placeholder="Enter cost price"
+              error={fieldErrors.cost_price}
+            />
+
+            <Input
+              id="consignment_price"
+              label="Consignment Price"
+              name="consignment_price"
+              type="text"
+              inputMode="decimal"
+              value={consignmentPriceInput}
+              onChange={e => handleConsignmentPriceChange(e.target.value)}
+              placeholder="Enter consignment price"
+              error={fieldErrors.consignment_price}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className={classNames.formLabel} htmlFor="note">
-                Note
+              <label className={classNames.formLabel} htmlFor="certificate">
+                Certificate
               </label>
-              <textarea
-                id="note"
-                name="note"
-                value={formData.note}
-                onChange={handleInputChange}
-                rows={3}
+              <select
+                id="certificate"
+                name="certificate"
+                value={formData.certificate ? 'yes' : 'no'}
+                onChange={e => {
+                  const isYes = e.target.value === 'yes';
+                  updateField('certificate', isYes);
+                  if (!isYes) {
+                    updateField('certificate_name', '');
+                  }
+                }}
                 className={classNames.input}
-                placeholder="Enter any additional notes"
+              >
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </div>
+            {formData.certificate ? (
+              <Input
+                id="certificate_name"
+                label="Certificate Name"
+                name="certificate_name"
+                value={formData.certificate_name}
+                onChange={handleInputChange}
+                placeholder="Enter certificate name"
+                helperText="Shown in the Item list. Certificate PDFs are uploaded after creation."
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Any additional information about condition, history, or special
-                features
-              </p>
-            </div>
+            ) : (
+              <div className="flex items-end">
+                <p className="text-xs text-gray-500">
+                  Upload certificate files after the instrument is created.
+                </p>
+              </div>
+            )}
+          </div>
 
-            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
-              <Button type="button" variant="secondary" onClick={onClose}>
-                Cancel
-              </Button>
-              <Button type="submit" loading={submitting}>
-                {isEditing ? 'Update Item' : 'Add Item'}
-              </Button>
-            </div>
-          </form>
-        </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input
+              id="size"
+              label="Size"
+              name="size"
+              value={formData.size}
+              onChange={handleInputChange}
+              placeholder="Enter size"
+            />
+
+            <Input
+              id="weight"
+              label="Weight"
+              name="weight"
+              value={formData.weight}
+              onChange={handleInputChange}
+              placeholder="Enter weight"
+            />
+          </div>
+
+          <Input
+            id="ownership"
+            label="Ownership"
+            name="ownership"
+            value={formData.ownership}
+            onChange={handleInputChange}
+            placeholder="Enter ownership info"
+          />
+
+          <div>
+            <label className={classNames.formLabel} htmlFor="serial_number">
+              Serial Number
+              {!isEditing && (
+                <span className="ml-2 text-xs text-gray-500">
+                  (auto-generated)
+                </span>
+              )}
+            </label>
+            <input
+              id="serial_number"
+              type="text"
+              name="serial_number"
+              value={formData.serial_number}
+              onChange={handleInputChange}
+              disabled={!isEditing}
+              // ✅ NOTE: pattern은 UX 힌트용일 뿐, 실제 검증은 validateInstrumentSerial에서 수행
+              // 규칙이 변경되면 normalizeInstrumentSerial과 validateInstrumentSerial도 함께 업데이트 필요
+              pattern="[A-Za-z]{2}[0-9]{7}"
+              title="2 letters + 7 digits (e.g., VI0000123)"
+              className={
+                (fieldErrors.serial_number
+                  ? classNames.inputError
+                  : classNames.input) +
+                (isEditing ? '' : ' bg-gray-100 cursor-not-allowed')
+              }
+              placeholder={
+                isEditing
+                  ? 'Enter serial number (e.g., VI0000123, BO0000456)'
+                  : 'Auto-generated'
+              }
+            />
+            {fieldErrors.serial_number && (
+              <p className={classNames.formError}>
+                {fieldErrors.serial_number}
+              </p>
+            )}
+            {!isEditing && (
+              <p className="mt-1 text-xs text-gray-500 italic">
+                Updates automatically when you change the type.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Images are added after creation from the instrument detail view.
+          </div>
+
+          <div>
+            <label className={classNames.formLabel} htmlFor="note">
+              Note
+            </label>
+            <textarea
+              id="note"
+              name="note"
+              value={formData.note}
+              onChange={handleInputChange}
+              rows={3}
+              className={classNames.input}
+              placeholder="Enter any additional notes"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Any additional information about condition, history, or special
+              features
+            </p>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={submitting}>
+              {isEditing ? 'Update Item' : 'Add Item'}
+            </Button>
+          </div>
+        </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 

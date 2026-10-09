@@ -30,10 +30,7 @@ import { errorHandler } from '@/utils/errorHandler';
 const CalendarView = dynamic(() => import('./CalendarView'), {
   ssr: false,
   loading: () => (
-    <div
-      className="rounded-lg bg-white p-6 border border-gray-200"
-      style={{ minHeight: '700px' }}
-    >
+    <div className="rounded-lg bg-white p-6 border border-gray-200 min-h-[240px] md:min-h-[700px]">
       <TableSkeleton rows={5} columns={1} />
     </div>
   ),

@@ -5,8 +5,20 @@ import { useState, useCallback, useEffect } from 'react';
  */
 export type CalendarViewMode = 'calendar' | 'list';
 
+const MOBILE_CALENDAR_QUERY = '(max-width: 767px)';
+
 export const useCalendarView = () => {
   const [view, setView] = useState<CalendarViewMode>('calendar');
+  const [hasInitializedMobileDefault, setHasInitializedMobileDefault] =
+    useState(false);
+
+  useEffect(() => {
+    if (hasInitializedMobileDefault) return;
+    setHasInitializedMobileDefault(true);
+    if (window.matchMedia?.(MOBILE_CALENDAR_QUERY)?.matches) {
+      setView('list');
+    }
+  }, [hasInitializedMobileDefault]);
 
   useEffect(() => {
     if (

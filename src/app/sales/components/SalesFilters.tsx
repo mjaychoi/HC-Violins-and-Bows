@@ -187,7 +187,7 @@ export default function SalesFilters({
             <input
               type="text"
               placeholder="Search sales (client, instrument, notes)..."
-              className="flex-1 min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              className="flex-1 min-w-0 w-full sm:min-w-[260px] h-10 px-4 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               value={search}
               onChange={e => onSearchChange(e.target.value)}
               aria-label="Search sales"

@@ -159,13 +159,36 @@ export default function InvoiceDetailPage() {
   const handleUpdate = useCallback(
     async (data: InvoicePayload) => {
       if (!invoiceId) return;
+      const expectedUpdatedAt = invoice?.updated_at;
+      if (!expectedUpdatedAt) {
+        handleError(
+          new Error(
+            'Cannot update invoice without a current updated_at version'
+          ),
+          'Update invoice'
+        );
+        return;
+      }
+
       setSubmitting(true);
       try {
-        const response = await apiFetch(`/api/invoices/${invoiceId}`, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(data),
-        });
+        const idempotencyKey =
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `invoice-update-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+        const response = await apiFetch(
+          `/api/invoices/${invoiceId}`,
+          {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              ...data,
+              updated_at: expectedUpdatedAt,
+            }),
+          },
+          { idempotencyKey }
+        );
 
         if (!response.ok) {
           throw await createApiResponseErrorFromResponse(
@@ -192,7 +215,7 @@ export default function InvoiceDetailPage() {
         setSubmitting(false);
       }
     },
-    [invoiceId, handleError, showSuccess]
+    [invoice?.updated_at, invoiceId, handleError, showSuccess]
   );
 
   const handleDelete = useCallback(async () => {
@@ -412,19 +435,25 @@ export default function InvoiceDetailPage() {
                       className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border border-gray-200 rounded-lg p-4"
                     >
                       <div className="flex items-start gap-4">
-                        {(item.image_signed_url || item.image_url) && (
+                        {item.image_signed_url ? (
                           <div className="w-20 h-20 shrink-0">
                             <OptimizedImage
-                              src={
-                                item.image_signed_url || item.image_url || ''
-                              }
+                              src={item.image_signed_url}
                               alt={item.description}
                               width={80}
                               height={80}
                               className="rounded-lg object-cover"
                             />
                           </div>
-                        )}
+                        ) : item.image_url ? (
+                          <div
+                            className="flex h-20 w-20 shrink-0 items-center justify-center rounded-lg bg-gray-100 px-1 text-center text-xs text-gray-500"
+                            role="img"
+                            aria-label="Invoice item image unavailable"
+                          >
+                            Image unavailable
+                          </div>
+                        ) : null}
                         <div>
                           <div className="text-sm font-medium text-gray-900">
                             {item.description}

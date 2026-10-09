@@ -13,8 +13,8 @@
  * strips those SSL parameters and supplies the CA with certificate and
  * hostname verification left on. When neither the path nor
  * `DATABASE_CA_CERT_REQUIRED` is set, the connection string is returned
- * unchanged so local embedded Postgres and the current production workflow
- * keep their existing behavior.
+ * unchanged so local embedded Postgres keeps its existing behavior.
+ * Protected production workflows explicitly require the CA.
  *
  * Never logs the certificate, the connection string, or credentials.
  */
@@ -132,8 +132,7 @@ export function formatLibpqVerifyFullConnectionString(
 /**
  * Config for `new Client(...)`.
  *
- * - No CA path and CA not required: original connection string (local tests
- *   and the current production workflow).
+ * - No CA path and CA not required: original connection string (local tests).
  * - CA required but missing: fail before connecting.
  * - CA present for a TLS connection, or CA required: verify-full against
  *   that CA. SSL parameters are removed from the connection string so they

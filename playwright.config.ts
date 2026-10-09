@@ -30,6 +30,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
+  /* A critical retry is diagnostic evidence, not a clean closeout pass. */
+  failOnFlakyTests: !!process.env.CI && isCriticalSuite,
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */

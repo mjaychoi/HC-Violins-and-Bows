@@ -1072,6 +1072,32 @@ describe('/api/sales', () => {
       expect(mockSelectQuery.eq).toHaveBeenCalledWith('org_id', 'test-org');
     });
 
+    it('returns 400 for a foreign or missing client without creating a sale', async () => {
+      const mockRpc = jest.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Client not found in organization' },
+      });
+      mockUserSupabase = createMockSupabaseClient(undefined, mockRpc);
+
+      const request = new NextRequest('http://localhost:3000/api/sales', {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'sale-foreign-client' },
+        body: JSON.stringify({
+          sale_price: 2500.0,
+          sale_date: '2024-01-15',
+          client_id: '123e4567-e89b-12d3-a456-426614174099',
+          notes: 'cross-org client',
+        }),
+      });
+
+      const response = await POST(request);
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.error).toBe('Client not found in organization');
+      expect(mockUserSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should validate required fields', async () => {
       const request = new NextRequest('http://localhost:3000/api/sales', {
         method: 'POST',

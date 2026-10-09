@@ -86,7 +86,7 @@ describe('SearchInput', () => {
     it('should show clear button when value exists and showClearButton is true', () => {
       render(<SearchInput value="test" onChange={mockOnChange} />);
 
-      const clearButton = screen.getByRole('button');
+      const clearButton = screen.getByRole('button', { name: /clear search/i });
       expect(clearButton).toBeInTheDocument();
     });
 
@@ -120,7 +120,7 @@ describe('SearchInput', () => {
         />
       );
 
-      const clearButton = screen.getByRole('button');
+      const clearButton = screen.getByRole('button', { name: /clear search/i });
       await user.click(clearButton);
 
       expect(mockOnChange).toHaveBeenCalledWith('');

@@ -384,22 +384,25 @@ function InvoiceList({
                                     key={item.id || idx}
                                     className="flex items-center gap-4 p-3 bg-white rounded-lg border border-gray-200"
                                   >
-                                    {(item.image_signed_url ||
-                                      item.image_url) && (
+                                    {item.image_signed_url ? (
                                       <div className="flex-shrink-0">
                                         <OptimizedImage
-                                          src={
-                                            item.image_signed_url ||
-                                            item.image_url ||
-                                            ''
-                                          }
+                                          src={item.image_signed_url}
                                           alt={item.description}
                                           width={80}
                                           height={80}
                                           className="rounded-lg object-cover"
                                         />
                                       </div>
-                                    )}
+                                    ) : item.image_url ? (
+                                      <div
+                                        className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-lg bg-gray-100 px-1 text-center text-xs text-gray-500"
+                                        role="img"
+                                        aria-label="Invoice item image unavailable"
+                                      >
+                                        Image unavailable
+                                      </div>
+                                    ) : null}
                                     <div className="flex-1">
                                       <div className="font-medium text-gray-900">
                                         {item.description}

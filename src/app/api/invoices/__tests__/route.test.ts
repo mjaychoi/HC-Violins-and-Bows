@@ -98,6 +98,19 @@ jest.mock('../imageUrls', () => ({
   attachSignedUrlsToInvoice: jest.fn(
     async (_supabase: unknown, invoice: unknown) => invoice
   ),
+  INVOICE_IMAGE_HYDRATION_REASONS: {
+    missingObject: 'missing-object',
+    unresolvableReference: 'unresolvable-reference',
+    crossTenant: 'cross-tenant',
+    storageError: 'storage-error',
+  },
+  getInvoiceImageHydrationReason: (err: unknown) => {
+    if (!err || typeof err !== 'object') return null;
+    const reason = (
+      err as { context?: { invoiceImageHydrationReason?: unknown } }
+    ).context?.invoiceImageHydrationReason;
+    return typeof reason === 'string' ? reason : null;
+  },
 }));
 jest.mock('../imageUploadTracking', () => ({
   claimInvoiceImageUploads: jest.fn(async () => ({
@@ -456,16 +469,84 @@ describe('/api/invoices GET', () => {
     expect(json.data).toEqual([]);
   });
 
-  it('fails closed when invoice image hydration fails', async () => {
+  it('returns invoices when an optional image object is missing', async () => {
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockImplementationOnce(
+      async (
+        _client: unknown,
+        invoice: { items?: Array<{ image_url?: string | null }> }
+      ) => ({
+        ...invoice,
+        items: (invoice.items ?? []).map(item => ({
+          ...item,
+          image_signed_url: null,
+        })),
+      })
+    );
+
+    const query = createInvoicesGetQueryMock({
+      data: [
+        {
+          id: '123e4567-e89b-12d3-a456-426614174014',
+          invoice_number: 'INV-014',
+          client_id: '123e4567-e89b-12d3-a456-426614174001',
+          invoice_date: '2026-04-03',
+          due_date: '2026-04-10',
+          subtotal: 100,
+          tax: 0,
+          total: 100,
+          currency: 'USD',
+          status: 'draft',
+          notes: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+          updated_at: '2026-04-03T00:00:00.000Z',
+          clients: null,
+          invoice_items: [
+            {
+              id: '123e4567-e89b-12d3-a456-426614174015',
+              invoice_id: '123e4567-e89b-12d3-a456-426614174014',
+              instrument_id: null,
+              description: 'Line item',
+              qty: 1,
+              rate: 100,
+              amount: 100,
+              image_url: 'test-org/missing-image.png',
+              display_order: 0,
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+        },
+      ],
+      error: null,
+      count: 1,
+    });
+
+    mockUserSupabase = {
+      from: jest.fn(() => query),
+    };
+
+    const { GET } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices?page=1');
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).not.toBe(false);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].id).toBe('123e4567-e89b-12d3-a456-426614174014');
+  });
+
+  it('fails closed when invoice image hydration is cross-tenant', async () => {
     const { attachSignedUrlsToInvoice } = require('../imageUrls');
     attachSignedUrlsToInvoice.mockRejectedValueOnce({
-      code: ErrorCodes.RECORD_NOT_FOUND,
-      message: 'Invoice image not found',
-      status: 404,
+      code: ErrorCodes.FORBIDDEN,
+      message: 'Invoice image is not available',
+      status: 403,
       timestamp: new Date().toISOString(),
       context: {
         invoiceImageHydration: true,
-        storagePath: 'test-org/missing-image.png',
+        invoiceImageHydrationReason: 'cross-tenant',
+        storagePath: 'other-org/secret-image.png',
       },
     });
 
@@ -515,9 +596,74 @@ describe('/api/invoices GET', () => {
     const response = await GET(request);
     const json = await response.json();
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(403);
     expect(json.success).toBe(false);
-    expect(json.message).toBeDefined();
+    expect(json.message).toBe('Invoices could not be loaded. Try again.');
+  });
+
+  it('fails closed when invoice image signing fails unexpectedly', async () => {
+    const { attachSignedUrlsToInvoice } = require('../imageUrls');
+    attachSignedUrlsToInvoice.mockRejectedValueOnce({
+      code: ErrorCodes.INTERNAL_ERROR,
+      message: 'Failed to generate invoice image access URL',
+      status: 500,
+      timestamp: new Date().toISOString(),
+      context: {
+        invoiceImageHydration: true,
+        invoiceImageHydrationReason: 'storage-error',
+        storagePath: 'test-org/invoice-item.png',
+      },
+    });
+
+    const query = createInvoicesGetQueryMock({
+      data: [
+        {
+          id: '123e4567-e89b-12d3-a456-426614174014',
+          invoice_number: 'INV-014',
+          client_id: '123e4567-e89b-12d3-a456-426614174001',
+          invoice_date: '2026-04-03',
+          due_date: '2026-04-10',
+          subtotal: 100,
+          tax: 0,
+          total: 100,
+          currency: 'USD',
+          status: 'draft',
+          notes: null,
+          created_at: '2026-04-03T00:00:00.000Z',
+          updated_at: '2026-04-03T00:00:00.000Z',
+          clients: null,
+          invoice_items: [
+            {
+              id: '123e4567-e89b-12d3-a456-426614174015',
+              invoice_id: '123e4567-e89b-12d3-a456-426614174014',
+              instrument_id: null,
+              description: 'Line item',
+              qty: 1,
+              rate: 100,
+              amount: 100,
+              image_url: 'test-org/invoice-item.png',
+              display_order: 0,
+              created_at: '2026-04-03T00:00:00.000Z',
+            },
+          ],
+        },
+      ],
+      error: null,
+      count: 1,
+    });
+
+    mockUserSupabase = {
+      from: jest.fn(() => query),
+    };
+
+    const { GET } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices?page=1');
+    const response = await GET(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(json.success).toBe(false);
+    expect(json.message).toBe('Invoices could not be loaded. Try again.');
   });
 
   it('fails fast when the invoice schema is out of date', async () => {
@@ -597,6 +743,74 @@ describe('/api/invoices POST', () => {
     const json = await response.json();
     expect(response.status).toBe(403);
     expect(json.error).toBe('Admin role required');
+  });
+
+  it('returns 400 when an item instrument_id is not in the caller organization', async () => {
+    const { safeValidate } = require('@/utils/typeGuards');
+    safeValidate.mockImplementationOnce(() => ({
+      success: true,
+      data: {
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        due_date: '2026-04-10',
+        subtotal: 100,
+        tax: 0,
+        total: 100,
+        status: 'draft',
+        currency: 'USD',
+        items: [
+          {
+            instrument_id: '123e4567-e89b-12d3-a456-426614174099',
+            description: 'Violin',
+            qty: 1,
+            rate: 100,
+            amount: 100,
+            image_url: null,
+            display_order: 0,
+          },
+        ],
+      },
+    }));
+
+    const instrumentQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      in: jest.fn().mockResolvedValue({ data: [], error: null }),
+    };
+    mockUserSupabase = {
+      rpc: jest.fn(),
+      from: createFromMock({ instruments: instrumentQuery }),
+    };
+
+    const { POST } = await import('../route');
+    const request = new NextRequest('http://localhost/api/invoices', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': 'cross-org-instrument-key' },
+      body: JSON.stringify({
+        client_id: '123e4567-e89b-12d3-a456-426614174001',
+        invoice_date: '2026-04-03',
+        subtotal: 100,
+        total: 100,
+        items: [
+          {
+            instrument_id: '123e4567-e89b-12d3-a456-426614174099',
+            description: 'Violin',
+            qty: 1,
+            rate: 100,
+            amount: 100,
+          },
+        ],
+      }),
+    });
+
+    const response = await POST(request);
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.error).toBe(
+      'One or more invoice item instruments were not found in organization'
+    );
+    expect(mockUserSupabase.rpc).not.toHaveBeenCalled();
   });
 
   it('returns 400 when client_id is not in the caller organization', async () => {

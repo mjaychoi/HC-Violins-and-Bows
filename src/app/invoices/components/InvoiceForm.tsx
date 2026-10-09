@@ -387,7 +387,7 @@ function InvoiceForm({
         if (!file.type.startsWith('image/')) {
           setErrors(prev => ({
             ...prev,
-            [`item-${itemId}-image`]: '이미지 파일만 업로드 가능합니다',
+            [`item-${itemId}-image`]: 'Please upload an image file',
           }));
           return;
         }
@@ -397,7 +397,7 @@ function InvoiceForm({
         if (file.size > maxSize) {
           setErrors(prev => ({
             ...prev,
-            [`item-${itemId}-image`]: '이미지 크기는 10MB 이하여야 합니다',
+            [`item-${itemId}-image`]: 'Image must be 10MB or smaller',
           }));
           return;
         }
@@ -448,7 +448,7 @@ function InvoiceForm({
         setErrors(prev => ({
           ...prev,
           [`item-${itemId}-image`]:
-            error instanceof Error ? error.message : '이미지 업로드 실패',
+            error instanceof Error ? error.message : 'Image upload failed',
         }));
         // Clean up on error
         updateItem(itemId, 'image_url', null);

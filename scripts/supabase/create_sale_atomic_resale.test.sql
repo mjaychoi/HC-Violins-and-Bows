@@ -445,6 +445,66 @@ BEGIN
   END;
 
   ------------------------------------------------------------------
+  -- 14b) Foreign client and missing client fail identically, with
+  --      no sale row and no inventory mutation
+  ------------------------------------------------------------------
+  DECLARE
+    v_inst_client UUID := 'd0000000-0000-4000-8000-000000000015';
+    v_missing_client UUID := 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    v_hist_before INTEGER;
+    v_hist_after INTEGER;
+    v_status_after TEXT;
+    v_foreign_err TEXT;
+    v_missing_err TEXT;
+  BEGIN
+    INSERT INTO public.instruments (id, org_id, type, serial_number, status, price)
+    VALUES (v_inst_client, v_org_a, 'Violin', 'RESALE-CLIENT-ORG-001', 'Available', 3000)
+    ON CONFLICT (id) DO UPDATE SET status = 'Available', org_id = EXCLUDED.org_id;
+    DELETE FROM public.sales_history WHERE instrument_id = v_inst_client;
+    SELECT COUNT(*) INTO v_hist_before FROM public.sales_history WHERE instrument_id = v_inst_client;
+
+    BEGIN
+      PERFORM public.create_sale_atomic(
+        3000, CURRENT_DATE, v_client_b, v_inst_client, 'foreign client'
+      );
+      RAISE EXCEPTION 'test14b: expected foreign client to fail';
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_foreign_err = MESSAGE_TEXT;
+      IF v_foreign_err LIKE '%test14b:%' THEN
+        RAISE;
+      END IF;
+    END;
+
+    BEGIN
+      PERFORM public.create_sale_atomic(
+        3000, CURRENT_DATE, v_missing_client, v_inst_client, 'missing client'
+      );
+      RAISE EXCEPTION 'test14b: expected missing client to fail';
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_missing_err = MESSAGE_TEXT;
+      IF v_missing_err LIKE '%test14b:%' THEN
+        RAISE;
+      END IF;
+    END;
+
+    IF v_foreign_err IS DISTINCT FROM 'Client not found in organization' THEN
+      RAISE EXCEPTION 'test14b: unexpected foreign client error: %', v_foreign_err;
+    END IF;
+    IF v_missing_err IS DISTINCT FROM v_foreign_err THEN
+      RAISE EXCEPTION 'test14b: missing client error % <> foreign %', v_missing_err, v_foreign_err;
+    END IF;
+
+    SELECT COUNT(*) INTO v_hist_after FROM public.sales_history WHERE instrument_id = v_inst_client;
+    IF v_hist_after <> v_hist_before THEN
+      RAISE EXCEPTION 'test14b: sale row persisted after denied client';
+    END IF;
+    SELECT status INTO v_status_after FROM public.instruments WHERE id = v_inst_client;
+    IF v_status_after <> 'Available' THEN
+      RAISE EXCEPTION 'test14b: instrument status mutated to %', v_status_after;
+    END IF;
+  END;
+
+  ------------------------------------------------------------------
   -- 15) Non-admin caller cannot invoke the mutation successfully
   ------------------------------------------------------------------
   PERFORM pg_temp.set_jwt(v_org_a, 'member', v_user_member);

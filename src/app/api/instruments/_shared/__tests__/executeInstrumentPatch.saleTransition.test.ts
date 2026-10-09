@@ -168,6 +168,42 @@ describe('executeInstrumentPatch sale_transition contract', () => {
     );
   });
 
+  it('returns 400 when sale_transition names a client outside the org', async () => {
+    const auth = makeAuth();
+    mockCurrentInstrumentState(auth, 'Available');
+    auth.userSupabase.rpc
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'instrument row not found for probe' },
+      })
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Client not found in organization' },
+      });
+
+    const result = await executeInstrumentPatch(auth as never, {
+      mode: 'collection',
+      instrumentId: INSTRUMENT_ID,
+      apiPath: 'InstrumentsAPI',
+      body: {
+        id: INSTRUMENT_ID,
+        updated_at: UPDATED_AT,
+        status: 'Sold',
+        sale_transition: {
+          sale_price: 1500,
+          sale_date: '2026-08-03',
+          client_id: CLIENT_ID,
+          sales_note: 'sold',
+        },
+      },
+    });
+
+    expect(result.status).toBe(400);
+    expect((result.payload as { error: string }).error).toBe(
+      'Client not found in organization'
+    );
+  });
+
   it('routes Sold → Available with sale_transition to the atomic RPC', async () => {
     const auth = makeAuth();
     mockCurrentInstrumentState(auth, 'Sold');

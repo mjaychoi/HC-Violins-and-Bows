@@ -339,6 +339,7 @@ function InvoicesPageContent() {
       status: status || undefined,
       sortColumn: sortColumn || undefined,
       sortDirection: sortDirection || undefined,
+      suppressErrorToast: true,
     });
 
     // fetch 직후에 플래그를 끔
@@ -382,6 +383,7 @@ function InvoicesPageContent() {
             status: status || undefined,
             sortColumn: sortColumn || undefined,
             sortDirection: sortDirection || undefined,
+            suppressErrorToast: true,
           });
         }
       }, 300);
@@ -927,6 +929,7 @@ function InvoicesPageContent() {
               status: status || undefined,
               sortColumn: sortColumn || undefined,
               sortDirection: sortDirection || undefined,
+              suppressErrorToast: true,
             });
           }}
           emptyTitle={orgScopeEmptyTitle}

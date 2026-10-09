@@ -110,7 +110,8 @@ project_match=yes ssl=require` is printed.
    being skipped never implies anything about the other.
 8. Only after every gate above passes does the workflow run:
    ```
-   supabase db push --db-url "$DATABASE_URL" --include-all --yes
+   verified_url="$(npx tsx scripts/production/format-libpq-verify-full-url.ts)"
+   supabase db push --db-url "$verified_url" --include-all --yes
    ```
 9. Post-deploy, an **authoritative, blocking** direct-Postgres catalog
    postflight runs (see "Post-deploy verification" below), and `npm run
@@ -358,6 +359,12 @@ Only the `deploy` job (after environment approval) reads secrets, and only
 in the specific steps that need each one:
 
 - `DATABASE_URL` — the approved session-pooler connection string.
+- `PRODUCTION_DATABASE_CA_CERT` — trusted Supabase database CA PEM, configured
+  on the protected `production` Environment. Both reconciliation and deployment
+  install it outside the workspace with mode `0600`, require it for Node/pg
+  certificate and hostname verification, and remove it in an `always()` step.
+  Missing or malformed CA material fails before any database connection;
+  there is no fallback to `STAGING_DATABASE_CA_CERT`.
 - `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` —
   used only by the non-authoritative `schema:ready` diagnostic step.
 
@@ -384,6 +391,7 @@ this PR's scope:
   rule), so a workflow_dispatch from a fork or a stray branch can never
   reach this Environment's secrets even before `guard-ref` runs.
 - `DATABASE_URL` secret.
+- `PRODUCTION_DATABASE_CA_CERT` secret (the reviewed production database CA).
 - `EXPECTED_SUPABASE_PROJECT_REF` variable.
 - `SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
   secrets (used only by the optional, non-authoritative readiness check).
@@ -403,6 +411,19 @@ this PR's scope:
 No workflow in this repository logs a database URL, password, project ref,
 service-role key, or token in plaintext, and none of them fall back to
 staging credentials if a production secret is missing.
+
+For libpq parity, the migration apply step captures the existing
+`format-libpq-verify-full-url.ts` output and passes that URL to `supabase db
+push`: `sslmode=verify-full` plus `sslrootcert`, with conflicting TLS query
+parameters removed. The formatted URL contains credentials and must never be
+printed. Node/pg probes, history reads, audits, and catalog postflight use
+`createDatabaseClientConfig` with `DATABASE_CA_CERT_REQUIRED=true`.
+
+After the code is reviewed and merged and the Environment secret is provisioned,
+validate the CA using **Production DB Read-Only Reconciliation** on the reviewed
+main SHA before considering a separately authorized production migration deploy.
+The deploy workflow is not a dry-run. A passing local TLS test does not prove
+hosted production connectivity or provision the Environment secret.
 
 ## Required repository settings (operator checklist)
 

@@ -29,7 +29,7 @@ jest.mock('@/components/common/feedback/SuccessToasts', () => {
   }) {
     return React.createElement(
       'div',
-      { className: 'fixed top-4 right-4 z-50 space-y-2' },
+      { className: 'fixed bottom-4 right-4 z-40 space-y-2' },
       toasts.map(toast =>
         React.createElement(
           'div',

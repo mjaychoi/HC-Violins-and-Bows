@@ -27,6 +27,13 @@ describe('AppSidebar', () => {
       expect(screen.getByText('Inventory App')).toBeInTheDocument()
     );
     expect(screen.getByText('Clients')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByRole('link', { name: 'Items' })).not.toHaveAttribute(
+      'aria-current'
+    );
   });
 
   it('shows Invoices navigation for an authorized admin', async () => {
