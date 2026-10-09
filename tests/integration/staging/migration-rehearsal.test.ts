@@ -916,7 +916,10 @@ describe('hosted staging migration rehearsal workflow contract', () => {
     expect(productionWorkflow).toContain('EXPECTED_SUPABASE_PROJECT_REF');
     expect(productionWorkflow).toContain('secrets.DATABASE_URL');
     expect(productionWorkflow).toContain(
-      'supabase db push --db-url "$DATABASE_URL" --include-all --yes'
+      'verified_url="$(npx tsx scripts/production/format-libpq-verify-full-url.ts)"'
+    );
+    expect(productionWorkflow).toContain(
+      'supabase db push --db-url "$verified_url" --include-all --yes'
     );
     expect(productionWorkflow).not.toContain('STAGING_APP_BASE_URL');
     expect(productionWorkflow).not.toContain('hosted-staging');

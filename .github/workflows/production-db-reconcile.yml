@@ -94,6 +94,11 @@ jobs:
           EXPECTED_SUPABASE_PROJECT_REF: ${{ vars.EXPECTED_SUPABASE_PROJECT_REF }}
         run: npx tsx scripts/production/db-probe.ts validate-only
 
+      - name: Install trusted production database CA
+        env:
+          PRODUCTION_DATABASE_CA_CERT: ${{ secrets.PRODUCTION_DATABASE_CA_CERT }}
+        run: bash scripts/production/install-database-ca.sh
+
       - name: Read-only production migration reconciliation
         id: reconcile
         # scripts/production/db-reconcile-readonly.ts: git-tracked local
@@ -106,6 +111,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: npx tsx scripts/production/db-reconcile-readonly.ts
+
+      - name: Remove runner-temp production database CA
+        if: always()
+        run: rm -f "$RUNNER_TEMP/production-database-ca.crt"
 
       - name: Reconciliation summary
         if: always()
