@@ -244,7 +244,22 @@ jobs:
       - name: Assert critical suite is non-empty
         run: node scripts/assert-critical-e2e-selected.cjs
 
+      - name: Bound package mirror network waits
+        # Run 37680342904 exhausted the entire 45-minute job in apt while
+        # an Ubuntu mirror stopped responding, before any tests ran.
+        # Bound individual requests/retries and leave time for safety-net
+        # cleanup if installation still fails.
+        run: |
+          printf '%s\n' \
+            'Acquire::http::Timeout "30";' \
+            'Acquire::https::Timeout "30";' \
+            'Acquire::Retries "2";' \
+            | sudo tee /etc/apt/apt.conf.d/99-e2e-network-timeouts >/dev/null
+
       - name: Install Playwright Chromium
+        timeout-minutes: 10
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: '60000'
         run: npm run test:e2e:install:chromium
 
       - name: Critical E2E runtime guard self-test (offline, route-mocked)
